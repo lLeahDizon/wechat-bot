@@ -20,8 +20,14 @@ from guard.investment import (
     MAX_SECONDS,
     ResearchBudget,
     _allowed_hosts,
+    _company_action_target,
     _market_hint,
+    _model_targets,
     _queries,
+    _rank_sources_for_targets,
+    _resolve_target_markets,
+    _source_entity_similarity,
+    _targets,
     _valid_synthesis,
     entrypoint_for,
     extract_daily_bars,
@@ -91,6 +97,97 @@ class InvestmentRoutingTests(unittest.TestCase):
                 query = _queries([{"target": "TEST", "market": market}], "investment-research")
                 self.assertTrue(any(domain in value for value in query))
                 self.assertIn(domain, _allowed_hosts([{"target": "TEST", "market": market}]))
+
+    def test_company_name_without_code_routes_and_is_extracted_from_natural_question(self):
+        question = "真爱美家最近表现如何"
+        self.assertTrue(related(question))
+        self.assertEqual(_company_action_target(question), "真爱美家")
+        self.assertEqual(_targets({}, question), [{"target": "真爱美家", "market": ""}])
+        self.assertEqual(_targets({}, "分析美股NVDA估值"), [{"target": "NVDA", "market": "US"}])
+        decision = self.engine.prepare(self.event(question))
+        self.assertEqual(decision.intent, "investment")
+        self.assertEqual(decision.model_input["question"], question)
+
+    def test_missing_market_is_omitted_and_search_covers_supported_markets(self):
+        question = "真爱美家还能加仓吗"
+        targets = _targets({"targets": [{"company": "真爱美家", "market": "UNKNOWN"}]}, question)
+        self.assertEqual(targets, [{"target": "真爱美家", "market": ""}])
+        self.assertEqual(_model_targets(targets), [{"target": "真爱美家"}])
+        query_text = " ".join(_queries(targets, "investment-research"))
+        self.assertIn("真爱美家", query_text)
+        self.assertNotIn("UNKNOWN", query_text)
+        focused_query = " ".join(_queries(targets, "investment-research", "真爱美家股价走势，我持仓100股"))
+        self.assertIn("股价", focused_query)
+        self.assertIn("走势", focused_query)
+        self.assertNotIn("100股", focused_query)
+        self.assertNotIn("持仓", focused_query)
+        allowed = _allowed_hosts(targets)
+        for market in ("US", "HK", "A", "TW"):
+            self.assertTrue(set(MARKETS[market]["hosts"]).issubset(allowed))
+
+    def test_matching_company_sources_resolve_market_and_ambiguous_sources_do_not(self):
+        targets = [{"target": "真爱美家", "market": "", "market_explicit": False}]
+        mainland_source = {"title": "浙江真爱美家股份有限公司公告", "text": "真爱美家公告", "host": "www.cninfo.com.cn"}
+        unrelated_source = {"title": "真爱科技股份有限公司", "text": "真爱科技年度业绩", "host": "www.cninfo.com.cn"}
+        self.assertGreater(_source_entity_similarity("真爱美家", mainland_source),
+            _source_entity_similarity("真爱美家", unrelated_source))
+        self.assertEqual(_resolve_target_markets(targets, [mainland_source])[0]["market"], "A")
+        ambiguous = [mainland_source, {**mainland_source, "host": "www.hkexnews.hk"}]
+        self.assertEqual(_resolve_target_markets(targets, ambiguous)[0]["market"], "")
+
+    def test_source_ranking_prefers_the_requested_company_topic(self):
+        annual_report = {"title": "真爱美家年度报告", "text": "真爱美家主营业务及年度经营情况。",
+            "url": "https://www.cninfo.com.cn/annual"}
+        share_price = {"title": "真爱美家股价行情", "text": "真爱美家股价近期走势和行情。",
+            "url": "https://www.cninfo.com.cn/price"}
+        ranked = _rank_sources_for_targets([annual_report, share_price],
+            [{"target": "真爱美家", "market": ""}], question="真爱美家股价近期怎么样")
+        self.assertEqual(ranked[0], share_price)
+
+    def test_company_research_prioritizes_matching_sources_without_unknown_market(self):
+        calls = []
+        query_log = []
+        allowed_hosts = set()
+        now = time.time()
+
+        class Research:
+            def collect_ephemeral(self, queries, urls, **kwargs):
+                nonlocal allowed_hosts
+                query_log.extend(queries)
+                allowed_hosts = kwargs["allowed_hosts"]
+                return {"state": "ok", "public_requests": 3, "public_pages": 2,
+                    "as_of_bjt": "2026-11-11T15:00:00+08:00", "missing": [],
+                    "sources": [
+                        {"url": "https://www.cninfo.com.cn/other", "final_url": "https://www.cninfo.com.cn/other",
+                         "title": "其他公司年度报告", "published_at": "2025-02-01", "fetched_at": now,
+                         "kind": "text/plain", "text": "其他公司营业收入与现金流。"},
+                        {"url": "https://www.cninfo.com.cn/target", "final_url": "https://www.cninfo.com.cn/target",
+                         "title": "真爱美家年度报告", "published_at": "2025-02-02", "fetched_at": now,
+                         "kind": "text/plain", "text": "真爱美家主营业务及年度经营情况。"},
+                    ]}
+
+        def model(data, key_file, api_base, timeout=None):
+            calls.append(data)
+            json.dumps(data, ensure_ascii=False)
+            if data["phase"] == "investment_plan":
+                return {"targets": []}, {"input_tokens": 1}
+            if data["phase"] == "investment_extract":
+                return {"facts": [], "claims": []}, {"input_tokens": 1}
+            if data["phase"] == "investment_analysis":
+                return {"scope": "service", "analysis": "经营结论需结合收入质量与风险。"}, {"input_tokens": 1}
+            return {"scope": "service", "answer": "结论：优先核实经营质量，并关注估值与下行风险。"}, {"input_tokens": 1}
+
+        result, _, _ = run_research({"question": "真爱美家最近表现如何"},
+            None, "https://api.apiroute.asia/v1", model_call=model, research=Research())
+        self.assertEqual(len(calls), 6)
+        self.assertIn("真爱美家", " ".join(query_log))
+        self.assertIn("表现", " ".join(query_log))
+        self.assertIn("cninfo.com.cn", allowed_hosts)
+        self.assertNotIn("UNKNOWN", json.dumps(calls, ensure_ascii=False))
+        self.assertEqual(calls[1]["targets"], [{"target": "真爱美家", "market": "A"}])
+        self.assertEqual(calls[1]["sources"][0]["title"], "真爱美家年度报告")
+        self.assertNotIn("UNKNOWN", result["answer"])
+        self.assertIn("真爱美家：A / CNY", result["answer"])
 
     def test_stock_question_routes_only_after_existing_group_and_mention_gates(self):
         decision = self.engine.prepare(self.event("分析美股 NVDA 的合理估值"))
@@ -325,11 +422,11 @@ class InvestmentEvidenceTests(unittest.TestCase):
                     "as_of_bjt": "2026-11-11T15:00:00+08:00", "missing": [],
                     "sources": [
                         {"url": "https://sec.gov/Archives/edgar/data/1/filing.htm", "final_url": "https://sec.gov/Archives/edgar/data/1/filing.htm",
-                         "title": "SEC Filing", "published_at": "2025-02-01", "fetched_at": now,
-                         "kind": "text/plain", "text": "Revenue 100 billion USD FY2025. The company sells GPU computing products."},
+                         "title": "NVDA SEC Filing", "published_at": "2025-02-01", "fetched_at": now,
+                         "kind": "text/plain", "text": "NVDA Revenue 100 billion USD FY2025. The company sells GPU computing products."},
                         {"url": "https://stockanalysis.com/stocks/nvda/financials/", "final_url": "https://stockanalysis.com/stocks/nvda/financials/",
-                         "title": "Financials", "published_at": "2025-02-02", "fetched_at": now,
-                         "kind": "text/plain", "text": "Revenue 100 billion USD FY2025. The company sells GPU computing products."},
+                         "title": "NVDA Financials", "published_at": "2025-02-02", "fetched_at": now,
+                         "kind": "text/plain", "text": "NVDA Revenue 100 billion USD FY2025. The company sells GPU computing products."},
                     ]}
         def model(data, key_file, api_base, timeout=None):
             calls.append(data)
@@ -391,8 +488,10 @@ class InvestmentEvidenceTests(unittest.TestCase):
             return {"targets": [{"company": "NVIDIA", "ticker": "NVDA", "market": "US"}]}, {}
         result, usages, _ = run_research({"question": "分析美股NVDA技术指标"}, None,
             "https://api.apiroute.asia/v1", model_call=model, research=MissingResearch())
-        self.assertIn("未取得足够可靠", result["answer"])
+        self.assertIn("没有找到足够可靠且与目标匹配", result["answer"])
         self.assertIn("技术指标和回测均不支持", result["answer"])
+        self.assertIn("证券代码不是必填项", result["answer"])
+        self.assertNotIn("UNKNOWN", result["answer"])
         self.assertEqual(len(calls), 1)
         self.assertEqual(len(usages), 1)
 
