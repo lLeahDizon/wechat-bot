@@ -10,4 +10,5 @@ User-facing bot changes are recorded here in reverse chronological order. Dates 
 - Answered stock-research capability questions locally instead of sending them through company research.
 - Resolved company names without requiring a security code, searched across supported markets when needed, prioritized matching public sources, and avoided exposing an internal unknown-market marker.
 - Added bounded text extraction for public PDF reports so verified financial figures can reach the existing research answer and cross-check table; partial documents are labeled accordingly.
+- Increased the per-page public research fetch allowance to eight seconds while preserving the 90-second per-question deadline.
 - Added seven-day retention of normalized investment failure codes for operator diagnosis, without storing chat text or credentials.

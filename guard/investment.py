@@ -821,7 +821,8 @@ def run_research(data, key_file, api_base, *, model_call=call, research=None, cl
         if research is None:
             raise ModelFailure("investment_research_unavailable")
         proof = research.collect_ephemeral(queries, data.get("web_urls", [])[:2], max_pages=MAX_PUBLIC_PAGES,
-            max_requests=MAX_PUBLIC_REQUESTS, deadline=budget.deadline, allowed_hosts=_allowed_hosts(targets))
+            max_requests=MAX_PUBLIC_REQUESTS, deadline=budget.deadline, allowed_hosts=_allowed_hosts(targets),
+            page_timeout=8)
         budget.set_public(proof)
         matched_sources = _rank_sources_for_targets(proof.get("sources", []), targets, question,
             explicit_urls=data.get("web_urls", [])[:2])
