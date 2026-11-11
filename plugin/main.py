@@ -10,7 +10,7 @@ from astrbot.api.star import Context, Star
 from diagnostics.client import QueryBudget
 
 from .guard.controller import diagnose
-from .guard.core import FAILED, Engine, Incoming, digest, mask_labels, unsafe
+from .guard.core import FAILED, Engine, Incoming, digest, mask_labels, safe_failure_code, unsafe
 from .guard.general import answer as general_answer
 from .guard.general import review_question
 from .guard.history import (
@@ -215,9 +215,10 @@ class Sub2APIGuard(Star):
                         self.engine.interpret(decision,result)
                     except ModelFailure as error:
                         if decision.intent=='lol' or (decision.intent not in {'feedback','investment'} and not self.engine.config.get('diagnostics_enabled')):self.engine.record_usage({})
+                        if decision.intent=='investment':self.engine.record_model_failure(incoming,decision.intent,error.code)
                         if decision.intent=='feedback':self.engine.reject_feedback(decision,'verification_unavailable')
                         else:decision.reply, decision.category = FAILED, 'model_failure'
-                        LOGGER.warning('model_failure code=' + error.code)
+                        LOGGER.warning('model_failure code=' + safe_failure_code(error.code))
                 if not decision.reply:
                     self.engine.mark_delivery(incoming, 'no_reply')
                     event.finish_no_reply()

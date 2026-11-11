@@ -85,6 +85,16 @@ def digest(*values: str) -> str:
     return hashlib.sha256("\0".join(values).encode()).hexdigest()
 
 
+_SAFE_FAILURE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
+
+
+def safe_failure_code(value):
+    if not isinstance(value, str):
+        return "other_error"
+    value = value.lower()
+    return value if _SAFE_FAILURE_CODE.fullmatch(value) else "other_error"
+
+
 def mask_labels(text,rules):
     text=normalize(text);hidden=set()
     for rule in rules[:8]:
@@ -215,13 +225,16 @@ class Engine:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(state_path)
         self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS deliveries(id TEXT PRIMARY KEY, state TEXT NOT NULL, at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS deliveries(id TEXT PRIMARY KEY, state TEXT NOT NULL, at REAL NOT NULL, failure_code TEXT);
             CREATE TABLE IF NOT EXISTS questions(subject TEXT, fingerprint TEXT, status_hash TEXT, ref TEXT, at REAL,
               PRIMARY KEY(subject,fingerprint,status_hash));
             CREATE TABLE IF NOT EXISTS irrelevant(subject TEXT PRIMARY KEY, count INTEGER, at REAL);
             CREATE TABLE IF NOT EXISTS usage(day TEXT PRIMARY KEY, requests INTEGER, input_tokens INTEGER, output_tokens INTEGER);
             CREATE TABLE IF NOT EXISTS knowledge(topic TEXT, note TEXT, at REAL, UNIQUE(topic,note));
         """)
+        delivery_columns = {row[1] for row in self.db.execute("PRAGMA table_info(deliveries)")}
+        if "failure_code" not in delivery_columns:
+            self.db.execute("ALTER TABLE deliveries ADD COLUMN failure_code TEXT")
         from .improvements import initialize
         initialize(self.db,self.faq,self.clock(),recover=True)
         from .reminders import Reminders
@@ -250,7 +263,7 @@ class Engine:
     def claim(self, event: Incoming) -> bool:
         key = digest(event.group, event.message_id)
         try:
-            self.db.execute("INSERT INTO deliveries VALUES (?, 'pending', ?)", (key, self.clock()))
+            self.db.execute("INSERT INTO deliveries(id,state,at) VALUES (?, 'pending', ?)", (key, self.clock()))
             self.db.commit()
             return True
         except sqlite3.IntegrityError:
@@ -261,6 +274,18 @@ class Engine:
             state = "needs_review"
         self.db.execute("UPDATE deliveries SET state=? WHERE id=?", (state, digest(event.group, event.message_id)))
         self.db.commit()
+
+    def record_model_failure(self, event: Incoming, intent: str, code: str) -> bool:
+        if intent != "investment":
+            return False
+        try:
+            cursor = self.db.execute("UPDATE deliveries SET failure_code=? WHERE id=?",
+                (safe_failure_code(code), digest(event.group, event.message_id)))
+            self.db.commit()
+            return cursor.rowcount == 1
+        except sqlite3.Error:
+            self.db.rollback()
+            return False
 
     def retort(self, subject: str, kind: str, tone='default') -> str:
         if tone=='gentle':
@@ -411,6 +436,7 @@ class Engine:
                 return decision
         if general:
             from .investment import references_other_personal_data
+            from .investment import investment_capability_answer, investment_capability_question
             from .investment import related as investment_related
             follow=(self.last_domains.get(decision.subject,(0,''))[1]=='investment'
                 and len(text)<120 and bool(re.match(r'^(?:那|继续|具体|还有|另外|风险|估值|为什么|怎么|这些|上述|再看|补充)',text))
@@ -420,6 +446,9 @@ class Engine:
                      if target!=profile.get('usage_target') for alias in names if isinstance(alias,str)]):
                 decision.intent='investment';decision.reply='为保护其他群成员的个人财务信息，我只使用提问者本人明确提供的持仓资料；请改为分析你自己的情况或公开公司数据。'
                 decision.category='investment_privacy';return decision
+            if investment_capability_question(text):
+                decision.intent='investment';decision.reply=investment_capability_answer()
+                decision.category='investment_capability';return decision
             if investment_related(text) or follow:
                 return self.investment_question(decision,text,web_urls)
         if self.config.get('lol_enabled'):

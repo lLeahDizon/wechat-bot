@@ -15,3 +15,7 @@ The Native WeChat adapter under `vendor/astrbot_plugin_wechat_native` is vendore
 ## Source synchronization
 
 This private GitHub repository is the durable source copy. Server-side code fixes must be brought back here, verified, committed, and pushed; planned changes should be developed from this repository. See `AGENTS.md`. Record user-facing changes in `CHANGELOG.md`.
+
+## Investment failure diagnostics
+
+Investment model failures retain only a normalized error code and timestamp in the existing delivery metadata for up to seven days. From the deployed source directory, operators can run `python3 admin/model_failures.py --limit 20` to read them. The output omits message text, sender IDs, and credentials.

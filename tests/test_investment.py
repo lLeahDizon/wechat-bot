@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -8,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from guard.core import Engine, Incoming
+from guard.core import Engine, Incoming, digest
 from guard.history import build_investment_context
 from guard.investment import (
     ENTRYPOINT_QUERY_TERMS,
@@ -24,6 +25,7 @@ from guard.investment import (
     _valid_synthesis,
     entrypoint_for,
     extract_daily_bars,
+    investment_capability_question,
     references_other_personal_data,
     related,
     run_isolated,
@@ -98,6 +100,63 @@ class InvestmentRoutingTests(unittest.TestCase):
         self.assertNotIn("group_context", decision.model_input)
         self.assertIsNone(self.engine.prepare(self.event("分析美股 NVDA 的估值", mentioned=False)).model_input)
         self.assertIsNone(self.engine.prepare(self.event("分析美股 NVDA 的估值", group="other@chatroom")).model_input)
+
+    def test_stock_capability_question_gets_local_answer_not_company_research(self):
+        question = "股票相关的内容你可以回答哪些"
+        decision = self.engine.prepare(self.event(question))
+        self.assertTrue(investment_capability_question(question))
+        self.assertEqual(decision.category, "investment_capability")
+        self.assertEqual(decision.intent, "investment")
+        self.assertIsNone(decision.model_input)
+        self.assertIn("A股、港股、美股和台股", decision.reply)
+        self.assertFalse(investment_capability_question("分析美股NVDA的估值"))
+        self.assertFalse(investment_capability_question("真爱美家还能加仓吗"))
+
+    def test_investment_failure_code_is_sanitized_and_retained_with_delivery_metadata(self):
+        event = self.event("分析美股NVDA的估值")
+        self.assertTrue(self.engine.claim(event))
+        self.assertTrue(self.engine.record_model_failure(event, "investment", "http_503"))
+        event_digest = digest(event.group, event.message_id)
+        row = self.engine.db.execute(
+            "SELECT id,state,failure_code FROM deliveries WHERE id=?",
+            (event_digest,),
+        ).fetchone()
+        self.assertEqual(row, (event_digest, "pending", "http_503"))
+        self.assertNotEqual(row[0], event.message_id)
+
+        unsafe_event = self.event("分析港股0700.HK")
+        self.engine.claim(unsafe_event)
+        self.engine.record_model_failure(unsafe_event, "investment", "invalid code")
+        self.assertEqual(self.engine.db.execute(
+            "SELECT failure_code FROM deliveries WHERE id=?",
+            (digest(unsafe_event.group, unsafe_event.message_id),),
+        ).fetchone()[0], "other_error")
+
+        self.now += 8 * 86400
+        self.engine.purge()
+        self.assertEqual(self.engine.db.execute("SELECT count(*) FROM deliveries").fetchone()[0], 0)
+
+    def test_existing_delivery_table_gets_failure_code_column_additively(self):
+        legacy_path = self.root / "legacy-state.sqlite"
+        legacy_db = sqlite3.connect(legacy_path)
+        legacy_db.execute("CREATE TABLE deliveries(id TEXT PRIMARY KEY,state TEXT NOT NULL,at REAL NOT NULL)")
+        legacy_db.execute("INSERT INTO deliveries VALUES ('legacy-digest','replied',?)", (self.now,))
+        legacy_db.commit()
+        legacy_db.close()
+
+        engine = Engine(self.policy, json.loads((ROOT / "knowledge/faq.json").read_text()),
+            legacy_path, self.root / "legacy-snapshot.json", lambda: self.now)
+        try:
+            columns = {row[1] for row in engine.db.execute("PRAGMA table_info(deliveries)")}
+            self.assertIn("failure_code", columns)
+            self.assertEqual(engine.db.execute("SELECT state FROM deliveries WHERE id='legacy-digest'").fetchone()[0], "replied")
+            event = self.event("分析美股NVDA")
+            self.assertTrue(engine.claim(event))
+            self.assertTrue(engine.record_model_failure(event, "investment", "transport"))
+            self.assertEqual(engine.db.execute("SELECT failure_code FROM deliveries WHERE id=?",
+                (digest(event.group, event.message_id),)).fetchone()[0], "transport")
+        finally:
+            engine.db.close()
 
     def test_other_members_personal_financial_data_is_rejected_locally(self):
         decision = self.engine.prepare(self.event("比较我的持仓和example_person_b的成本，分析美股NVDA"))

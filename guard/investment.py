@@ -32,6 +32,12 @@ STOCK_TOPIC = re.compile(
     r"(?<![A-Za-z0-9])[A-Z]{1,5}(?![A-Za-z0-9]).{0,20}(?:涨|跌|股价|估值|市值|回报|收益|买入|卖出)",
     re.IGNORECASE,
 )
+STOCK_CAPABILITY_TOPIC = re.compile(r"股票|股市|个股|证券|投资|A股|港股|美股|台股", re.IGNORECASE)
+CAPABILITY_QUESTION = re.compile(
+    r"(?:能|可以|可|会|支持).{0,16}(?:回答|分析|研究|处理).{0,16}(?:哪些|什么|哪类|范围|类型|内容|领域|问题)|"
+    r"(?:哪些|什么|哪类|范围|类型|内容|领域|问题).{0,16}(?:能|可以|可|会|支持).{0,16}(?:回答|分析|研究|处理)",
+    re.IGNORECASE,
+)
 TECHNICAL_TOPIC = re.compile(r"技术指标|技术分析|均线|K线|日线|回测|量化策略|波动率|最大回撤", re.IGNORECASE)
 PERSONAL_TOPIC = re.compile(r"(?:我|本人).{0,32}(?:持仓|持有|买入|买了|成本|预算|资金|风险偏好|仓位|股数|加仓|减仓|有.{0,12}(?:股|股票))|(?:我的|本人).{0,16}(?:组合|持仓|预算|成本|风险)", re.DOTALL)
 PRIVATE_CONTEXT = re.compile(
@@ -85,6 +91,17 @@ def related(question):
            for entry in ENTRYPOINTS):
         return True
     return bool(STOCK_TOPIC.search(question))
+
+
+def investment_capability_question(question):
+    return (isinstance(question, str)
+        and bool(STOCK_CAPABILITY_TOPIC.search(question))
+        and bool(CAPABILITY_QUESTION.search(question)))
+
+
+def investment_capability_answer():
+    return ("我可以基于可核验的公开资料研究A股、港股、美股和台股的公司、财报、估值、行业、风险与新闻。"
+        "问个股请提供公司名或证券代码及市场；技术指标或回测仅在有可核验的公开日线数据时支持。")
 
 
 def references_other_personal_data(question, aliases=()):
