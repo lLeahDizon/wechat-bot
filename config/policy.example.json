@@ -1,0 +1,44 @@
+{
+  "enabled": false,
+  "acceptance_prefix": "",
+  "diagnostics_enabled": false,
+  "monitor_enabled": false,
+  "feedback_enabled": true,
+  "owner_subject_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "owner_operations_enabled": false,
+  "improvement_mode": "verified_service",
+  "member_profiles": {},
+  "usage_public_aliases": {
+    "flower": ["example_person_a"],
+    "gentle": ["example_person_b"]
+  },
+  "usage_public_names": {
+    "flower": "Member Flower",
+    "gentle": "Member Gentle"
+  },
+  "group_id": "demo-group@chatroom",
+  "bot_instance_id": "demo-bot",
+  "api_base": "https://api.example.invalid/v1",
+  "help": "Use a real @ mention to ask the demo bot. Runtime addresses and credentials are configured outside this example.",
+  "style_sampling": {
+    "state": "pending",
+    "source_group": "demo-group@chatroom",
+    "max_per_person": 20,
+    "raw_samples_persisted": false,
+    "note": "Example policy only; no real group samples are stored."
+  },
+  "retorts": {
+    "off_topic": [
+      "Please keep the question focused on the service.",
+      "This looks unrelated; ask a Sub2API or game question."
+    ],
+    "repeat": [
+      "Please refer to the previous answer and add any new details.",
+      "If the issue remains, say which step did not work."
+    ]
+  },
+  "lol_enabled": true,
+  "reminders_enabled": true,
+  "general_enabled": false,
+  "server_readonly": true
+}

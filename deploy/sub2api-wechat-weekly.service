@@ -1,0 +1,12 @@
+[Unit]
+Description=One weekly anonymous Sub2API FAQ summary attempt
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec sub2api-wechat-astrbot python /opt/bot-code/admin/weekly.py
+UMask=0077
+Nice=10
+TimeoutStartSec=150
+StandardOutput=null
+StandardError=null

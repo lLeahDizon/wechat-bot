@@ -1,0 +1,25 @@
+[Unit]
+Description=Sub2API WeChat fixed owner operations
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sub2api-wechat-bot/code
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m operations.server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/sub2api-wechat-bot/diagnostics /run/sub2api-wechat-admin
+RuntimeDirectory=sub2api-wechat-admin
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+RestrictAddressFamilies=AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

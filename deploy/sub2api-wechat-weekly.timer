@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly anonymous bot knowledge summary
+
+[Timer]
+OnCalendar=Sun *-*-* 03:20:00 Asia/Shanghai
+Persistent=true
+Unit=sub2api-wechat-weekly.service
+
+[Install]
+WantedBy=timers.target

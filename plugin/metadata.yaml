@@ -1,0 +1,6 @@
+name: astrbot_plugin_sub2api_guard
+display_name: Sub2API 私域答疑守卫
+desc: 仅目标微信群，单次模型请求，公开知识和脱敏状态，短内存上下文。
+version: v0.1.0
+author: local-operator
+astrbot_version: ">=4.29.3,<5"

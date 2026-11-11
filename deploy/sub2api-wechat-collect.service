@@ -1,0 +1,12 @@
+[Unit]
+Description=Sub2API bot fixed public status and storage protection
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/sub2api-wechat-bot/code/admin/maintenance.py collect
+UMask=0077
+Nice=10
+TimeoutStartSec=90
+StandardOutput=null
+StandardError=null

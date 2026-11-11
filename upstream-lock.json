@@ -1,0 +1,14 @@
+{
+  "astrbot": {
+    "version": "v4.29.4",
+    "commit": "61335414433db721b3f7ecc93f90deafe0a59d78"
+  },
+  "native": {
+    "version": "v1.3.3",
+    "commit": "7d4da1cb2b7995b937e252485c060cb6450949b7"
+  },
+  "adapter": {
+    "commit": "ff0f3f61c6333e4ec9e04c67532312ceccfe8013",
+    "archive_sha256": "05c1d584405167f9ab2d9528f579f665086321c67ee099f8eead3a942b455aa4"
+  }
+}

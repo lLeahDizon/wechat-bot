@@ -1,0 +1,32 @@
+[Unit]
+Description=Bounded read-only Sub2API diagnostics and local monitoring
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/sub2api-wechat-bot/code
+ExecStart=/usr/bin/python3 -m diagnostics.server
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+RuntimeDirectory=sub2api-wechat-query
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/run/sub2api-wechat-query /opt/sub2api-wechat-bot/diagnostics
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=256M
+CPUQuota=35%
+TasksMax=48
+LimitCORE=0
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

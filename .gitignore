@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.env
+.env.*
+secrets/
+admin-evidence/
+archives/
+outputs/
+logs/
+*.sqlite
+*.sqlite3
+*.log
+*.tar.gz
+config/policy.json

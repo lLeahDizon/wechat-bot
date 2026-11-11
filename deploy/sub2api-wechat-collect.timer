@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Sub2API bot public snapshot and disk guard
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=30
+AccuracySec=5
+Unit=sub2api-wechat-collect.service
+
+[Install]
+WantedBy=timers.target

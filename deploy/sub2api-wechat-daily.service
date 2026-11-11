@@ -1,0 +1,11 @@
+[Unit]
+Description=Retain only task-owned bot records and archives
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/sub2api-wechat-bot/code/admin/maintenance.py daily
+UMask=0077
+Nice=10
+StandardOutput=null
+StandardError=null
