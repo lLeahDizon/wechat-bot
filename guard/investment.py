@@ -489,12 +489,18 @@ def _source_id_records(sources):
             fetched = "时间未知"
         published = source.get("published_at")
         published = str(published)[:40] if isinstance(published, str) and published else "未标明"
-        records.append({"id": f"S{index}", "title": title, "host": host,
+        record = {"id": f"S{index}", "title": title, "host": host,
             "url": url, "published_at": published, "fetched_at": fetched,
             "tier": "primary" if any(host == domain or host.endswith("." + domain) for domain in
                 ("sec.gov", "hkexnews.hk", "cninfo.com.cn", "sse.com.cn", "szse.cn", "mops.twse.com.tw", "twse.com.tw")) else "secondary",
             "text": source.get("text", "") if isinstance(source.get("text"), str) else "",
-            "kind": source.get("kind", "")})
+            "kind": source.get("kind", "")}
+        for key in ("pdf_page_count", "pdf_pages_extracted"):
+            if type(source.get(key)) is int:
+                record[key] = source[key]
+        if source.get("pdf_truncated") is True:
+            record["pdf_truncated"] = True
+        records.append(record)
     return records
 
 
@@ -748,7 +754,9 @@ def _format_sources(sources):
         return "来源：未取得可核验网页正文。"
     lines = ["本次查阅来源："]
     for source in sources:
-        lines.append(f"[{source['id']}] {source['title']}（{source['tier']}，{source['host']}）；发布/报告日期：{source['published_at']}；抓取时间：{source['fetched_at']}；{source['url']}")
+        pdf_note = (f"；PDF正文解析{source['pdf_pages_extracted']}/{source['pdf_page_count']}页"+
+            ("（受限截断）" if source.get("pdf_truncated") else "")) if source.get("pdf_page_count") else ""
+        lines.append(f"[{source['id']}] {source['title']}（{source['tier']}，{source['host']}）；发布/报告日期：{source['published_at']}；抓取时间：{source['fetched_at']}{pdf_note}；{source['url']}")
     return "\n".join(lines)
 
 
@@ -869,7 +877,13 @@ def run_research(data, key_file, api_base, *, model_call=call, research=None, cl
             else:
                 analyses.append({"lens": lens, "analysis": "本视角未得到可用结论，按资料不足处理。"})
 
-        source_meta = [{k: source[k] for k in ("id", "title", "host", "published_at", "fetched_at", "url")} for source in sources]
+        source_meta = []
+        for source in sources:
+            item = {k: source[k] for k in ("id", "title", "host", "published_at", "fetched_at", "url")}
+            for key in ("pdf_page_count", "pdf_pages_extracted", "pdf_truncated"):
+                if key in source:
+                    item[key] = source[key]
+            source_meta.append(item)
         final = _invoke(model_call, {"domain": "investment", "phase": "investment_synthesis",
             "entrypoint": entrypoint, "question": question if personal else public_question,
             "entrypoint_focus": entrypoint_details["focus"],
