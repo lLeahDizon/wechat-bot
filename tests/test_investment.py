@@ -550,10 +550,12 @@ class InvestmentEvidenceTests(unittest.TestCase):
     def test_orchestrator_uses_six_calls_and_never_searches_personal_position(self):
         calls = []
         query_log = []
+        page_timeouts = []
         now = time.time()
         class Research:
             def collect_ephemeral(self, queries, urls, **kwargs):
                 query_log.extend(queries)
+                page_timeouts.append(kwargs.get("page_timeout"))
                 return {"state": "ok", "public_requests": 3, "public_pages": 2,
                     "as_of_bjt": "2026-11-11T15:00:00+08:00", "missing": [],
                     "sources": [
@@ -585,6 +587,7 @@ class InvestmentEvidenceTests(unittest.TestCase):
         self.assertEqual(len(calls), 6)
         self.assertEqual(len(usages), 6)
         self.assertEqual(proof, ["investment_data"])
+        self.assertEqual(page_timeouts, [8])
         self.assertTrue(all("100股" not in query and "成本" not in query for query in query_log))
         self.assertNotIn("personal_context", calls[2])
         self.assertNotIn("personal_context", calls[3])
