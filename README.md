@@ -7,8 +7,11 @@ The bot supports general question answering, public web research, League of Lege
 Run the offline test suite with:
 
 ```sh
+python3 -m pip install -r plugin/requirements.txt
 python3 -B -m unittest discover -s tests
 ```
+
+Public research can extract text from PDFs up to the existing 2 MiB download limit, 40 pages, and 40,000 characters. Parsing stays within the per-page fetch deadline; encrypted, image-only, or otherwise unreadable PDFs remain unsupported, and truncated reports are labeled partial. PDF bytes are processed in memory and are not cached.
 
 The Native WeChat adapter under `vendor/astrbot_plugin_wechat_native` is vendored from its upstream project; its license is included with the source. Use `config/policy.example.json` as a template. The runtime `config/policy.json` is ignored and must be supplied separately.
 

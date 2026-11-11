@@ -2,6 +2,7 @@
 import datetime
 import hashlib
 import http.client
+import io
 import ipaddress
 import json
 import re
@@ -23,6 +24,8 @@ DNS_POOL=ThreadPoolExecutor(max_workers=4,thread_name_prefix='public-dns')
 DNS_SLOTS=threading.BoundedSemaphore(4)
 BLOCKED_HOSTS={'api.apiroute.asia','localhost','host.docker.internal','metadata.google.internal'}
 MAX_BODY=2*1024*1024
+MAX_PDF_PAGES=40
+MAX_PDF_TEXT=40000
 
 
 def public_url(value):
@@ -49,6 +52,55 @@ def query_text(value):
     value=normalize(value).strip()
     if not 2<=len(value)<=180 or redact_question(value)!=value or re.search(r'https?://|\[[^\]]*隐藏[^\]]*\]',value):raise ValueError('private_search')
     return value
+
+
+def _extract_pdf_text(raw, *, deadline, max_pages=MAX_PDF_PAGES, max_chars=MAX_PDF_TEXT):
+    if not isinstance(raw,bytes) or not raw.startswith(b'%PDF-'):
+        raise ValueError('invalid_public_pdf')
+    if type(max_pages) is not int or max_pages<1 or type(max_chars) is not int or max_chars<1:
+        raise ValueError('invalid_pdf_limits')
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        raise ValueError('pdf_parser_unavailable') from None
+    try:
+        reader=PdfReader(io.BytesIO(raw),strict=False)
+        if reader.is_encrypted:
+            raise ValueError('encrypted_public_pdf')
+        page_count=len(reader.pages)
+        if page_count<1:
+            raise ValueError('empty_public_pdf')
+        pieces=[];character_count=0;pages_extracted=0;truncated=page_count>max_pages
+        for page in reader.pages[:max_pages]:
+            if time.monotonic()>=deadline:
+                truncated=True
+                break
+            text=page.extract_text() or ''
+            text=re.sub(r'(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])','',text)
+            separator=1 if pieces else 0
+            remaining=max_chars-character_count-separator
+            if remaining<=0:
+                truncated=True
+                break
+            pieces.append(text[:remaining])
+            character_count+=separator+min(len(text),remaining)
+            pages_extracted+=1
+            if len(text)>remaining:
+                truncated=True
+                break
+        text='\n'.join(pieces)
+    except TimeoutError:
+        raise
+    except Exception:  # noqa: BLE001 - malformed PDF parser errors must degrade to a safe miss.
+        raise ValueError('public_pdf_unavailable') from None
+    if not text.strip():
+        if time.monotonic()>=deadline:
+            raise TimeoutError('public_pdf_deadline')
+        raise ValueError('public_pdf_no_text')
+    if time.monotonic()>=deadline:
+        truncated=True
+    return {'text':text,'pdf_page_count':page_count,'pdf_pages_extracted':pages_extracted,
+            'pdf_truncated':truncated}
 
 
 class PinnedHTTPS(http.client.HTTPSConnection):
@@ -79,8 +131,12 @@ class PublicHTTP:
         # A fixed network worker bounds even slow DNS/header/body trickles. Its
         # program is constant; neither the model nor a page supplies code/args.
         worker="import sys,json; v=json.load(sys.stdin); sys.path.insert(0,v['module_root']); from guard.public_web import PublicHTTP; print(json.dumps(PublicHTTP()._get(v['url'],v['timeout'])))"
-        result=subprocess.run([sys.executable,'-c',worker],input=json.dumps({'url':url,'timeout':timeout,
-            'module_root':str(Path(__file__).resolve().parent.parent)}),capture_output=True,text=True,timeout=timeout)
+        try:
+            result=subprocess.run([sys.executable,'-c',worker],input=json.dumps({'url':url,'timeout':timeout,
+                'module_root':str(Path(__file__).resolve().parent.parent)}),capture_output=True,text=True,
+                timeout=timeout,check=False)
+        except subprocess.TimeoutExpired:
+            raise TimeoutError('public_worker_deadline') from None
         if result.returncode or len(result.stdout)>MAX_BODY*3:raise ValueError('public_worker_unavailable')
         return json.loads(result.stdout)
     def _get(self,url,timeout=5):
@@ -93,14 +149,15 @@ class PublicHTTP:
             connection=self.connection(p.hostname,address,min(3,remaining))
             try:
                 connection.request('GET',p.path+('?' + p.query if p.query else ''),headers={
-                    'User-Agent':'Sub2API-Group-FAQ/1.0','Accept':'text/html,application/rss+xml,application/xml,text/plain,application/json',
+                    'User-Agent':'Sub2API-Group-FAQ/1.0','Accept':'text/html,application/rss+xml,application/xml,text/plain,application/json,application/pdf',
                     'Accept-Encoding':'identity'})
                 response=connection.getresponse()
                 if response.status in {301,302,303,307,308}:
                     url=urljoin(url,response.getheader('Location',''));continue
                 if response.status!=200:raise ValueError('public_unavailable')
                 kind=(response.getheader('Content-Type','') or '').lower()
-                if not any(x in kind for x in ['text/html','text/plain','xml','json']):raise ValueError('unsupported_public_content')
+                is_pdf='application/pdf' in kind
+                if not is_pdf and not any(x in kind for x in ['text/html','text/plain','xml','json']):raise ValueError('unsupported_public_content')
                 chunks=[];size=0
                 while True:
                     remaining=deadline-time.monotonic()
@@ -112,6 +169,12 @@ class PublicHTTP:
                     if size>MAX_BODY:raise ValueError('public_too_large')
                 raw=b''.join(chunks)
                 if len(raw)>MAX_BODY:raise ValueError('public_too_large')
+                if is_pdf:
+                    parsed=_extract_pdf_text(raw,deadline=deadline)
+                    return {'url':url,'body':parsed['text'],'kind':kind,
+                            'pdf_page_count':parsed['pdf_page_count'],
+                            'pdf_pages_extracted':parsed['pdf_pages_extracted'],
+                            'pdf_truncated':parsed['pdf_truncated']}
                 encoding=re.search(r'charset=["\x27]?([A-Za-z0-9_-]+)',kind)
                 text=raw.decode(encoding[1] if encoding else 'utf-8','replace')
                 if re.search(r'challenge-form|cf-chl-|verify you are human|访问验证|安全验证|验证码',text[:20000],re.IGNORECASE):raise ValueError('public_challenge')
@@ -151,8 +214,9 @@ def plain(value,limit):
     return value[:limit] if value else ''
 
 
-def excerpt(text,queries):
+def excerpt(text,queries,is_pdf=False):
     if len(text)<=6500:return text
+    if is_pdf:return text[:6500]
     words=set(re.findall(r'[A-Za-z][A-Za-z0-9_.-]{3,}|[\u4e00-\u9fff]{2,12}',' '.join(queries)))
     words-={'Python','python','official','documentation','docs','官方文档'}
     spans=[(0,700)];lower=text.lower()
@@ -261,6 +325,7 @@ class PublicResearch:
         candidates.sort(key=lambda url:0 if url in explicit_set else 1 if re.search(
             r'(?:\.gov(?:\.[a-z]{2})?|\.gov\.cn|\.edu(?:\.[a-z]{2})?|sec\.gov|hkexnews\.hk|cninfo\.com\.cn|mops\.twse\.com\.tw)',
             urlsplit(url).hostname or '',re.IGNORECASE) else 2)
+        result_titles={row['url']:row['title'] for row in records if row.get('title')}
         for url in candidates:
             if pages>=max_pages or requests>=max_requests or time.monotonic()>=deadline:break
             try:
@@ -276,14 +341,25 @@ class PublicResearch:
                 final_url=public_url(value.get('url') or url)
                 if url not in explicit_set and not host_allowed(final_url):
                     raise ValueError('source_redirect_host_rejected')
-                source={'url':url,'final_url':final_url,'title':plain(document.title,180),
+                source={'url':url,'final_url':final_url,'title':plain(document.title or result_titles.get(url,''),180),
                     'text':plain(text,40000),'published_at':document.published,'fetched_at':self.clock(),
                     'kind':kind}
+                for key in ('pdf_page_count','pdf_pages_extracted'):
+                    if type(value.get(key)) is int:
+                        source[key]=value[key]
+                if value.get('pdf_truncated') is True:
+                    source['pdf_truncated']=True
                 if not source['text']:raise ValueError('empty_public_page')
                 sources.append(source)
             except (OSError,TimeoutError,ValueError,TypeError,UnicodeError,KeyError,AttributeError):missing.append('page_unavailable')
-        sources=[{**source,'text':excerpt(source['text'],safe)} for source in sources]
-        return {'kind':'public_research','state':'ok' if sources and not missing else 'partial' if sources else 'unavailable',
+        for source in sources:
+            original_text=source['text']
+            is_pdf='application/pdf' in source.get('kind','')
+            source['text']=excerpt(original_text,safe,is_pdf=is_pdf)
+            if is_pdf and len(source['text'])<len(original_text):
+                source['pdf_truncated']=True
+        partial=bool(missing) or any(source.get('pdf_truncated') for source in sources)
+        return {'kind':'public_research','state':'partial' if sources and partial else 'ok' if sources else 'unavailable',
             'as_of_bjt':datetime.datetime.fromtimestamp(self.clock(),datetime.timezone(datetime.timedelta(hours=8))).isoformat(),
             'sources':sources,'search_results':records[:8],'missing':sorted(set(missing)),
             'public_requests':requests,'public_pages':pages,'search_calls':search_calls,

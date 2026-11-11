@@ -42,9 +42,76 @@ from guard.investment import (
 )
 from guard.investment_catalogue import ENTRYPOINTS
 from guard.model import ModelFailure, payload
-from guard.public_web import PublicResearch
+from guard.public_web import PublicHTTP, PublicResearch, _extract_pdf_text
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _minimal_pdf(pages):
+    def escape(value):
+        return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    page_ids = [3 + index * 2 for index in range(len(pages))]
+    font_id = 3 + len(pages) * 2
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [" + b" ".join(f"{value} 0 R".encode() for value in page_ids)
+        + f"] /Count {len(pages)} >>".encode(),
+    ]
+    for page_id, text in zip(page_ids, pages):
+        content_id = page_id + 1
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>".encode()
+        )
+        stream = f"BT /F1 12 Tf 36 760 Td ({escape(text)}) Tj ET".encode()
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream")
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    result = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, value in enumerate(objects, 1):
+        offsets.append(len(result))
+        result.extend(f"{index} 0 obj\n".encode() + value + b"\nendobj\n")
+    xref = len(result)
+    result.extend(f"xref\n0 {len(offsets)}\n".encode())
+    result.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        result.extend(f"{offset:010d} 00000 n \n".encode())
+    result.extend(f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
+    return bytes(result)
+
+
+def _public_pdf_fetcher(pdf):
+    class Response:
+        status = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        def getheader(self, name, default=""):
+            return "application/pdf" if name.lower() == "content-type" else default
+
+        def read1(self, size):
+            value, self.body = self.body[:size], self.body[size:]
+            return value
+
+    class Connection:
+        sock = None
+
+        def request(self, *args, **kwargs):
+            return None
+
+        def getresponse(self):
+            return Response(pdf)
+
+        def close(self):
+            return None
+
+    return PublicHTTP(
+        resolver=lambda *args: [(None, None, None, None, ("93.184.216.34", 443))],
+        connection=lambda *args: Connection(),
+    )
 
 
 class InvestmentRoutingTests(unittest.TestCase):
@@ -317,6 +384,75 @@ class InvestmentEvidenceTests(unittest.TestCase):
         self.assertEqual(proof["public_pages"], 1)
         self.assertFalse(proof["persistent_cache_used"])
         self.assertEqual(proof["state"], "ok")
+
+    def test_pdf_extraction_enforces_page_character_and_deadline_limits(self):
+        pdf = _minimal_pdf(["First page Revenue 100.", "Second page Net income 25."])
+        page_limited = _extract_pdf_text(pdf, deadline=time.monotonic() + 5, max_pages=1)
+        self.assertEqual(page_limited["pdf_page_count"], 2)
+        self.assertEqual(page_limited["pdf_pages_extracted"], 1)
+        self.assertTrue(page_limited["pdf_truncated"])
+        self.assertNotIn("Second page", page_limited["text"])
+
+        char_limited = _extract_pdf_text(_minimal_pdf(["Revenue 100 million USD FY2025.", "Revenue 200."]),
+            deadline=time.monotonic() + 5, max_chars=12)
+        self.assertEqual(len(char_limited["text"]), 12)
+        self.assertTrue(char_limited["pdf_truncated"])
+        with self.assertRaises(TimeoutError):
+            _extract_pdf_text(pdf, deadline=time.monotonic() - 1)
+
+    def test_public_fetch_worker_timeout_is_a_safe_timeout(self):
+        with patch("guard.public_web.subprocess.run", side_effect=subprocess.TimeoutExpired(["python"], 3)), \
+                self.assertRaisesRegex(TimeoutError, "public_worker_deadline"):
+            PublicHTTP().get("https://example.com/report.pdf", timeout=3)
+
+    def test_ephemeral_research_marks_partial_pdf_coverage_and_keeps_title(self):
+        pages = ["NVDA FY2025 Revenue 100."] + ["Other report page."] * 40
+        fetcher = _public_pdf_fetcher(_minimal_pdf(pages))
+        research = PublicResearch(cache=None, fetch=fetcher.get,
+            search=lambda queries, timeout: [{"url": "https://sec.gov/Archives/edgar/data/1/annual.pdf",
+                                              "title": "NVDA FY2025 annual report"}])
+        proof = research.collect_ephemeral(["NVDA FY2025 annual report"],
+            max_pages=1, max_requests=2, allowed_hosts={"sec.gov"})
+        self.assertEqual(proof["state"], "partial")
+        source = proof["sources"][0]
+        self.assertEqual(source["title"], "NVDA FY2025 annual report")
+        self.assertEqual(source["pdf_page_count"], 41)
+        self.assertEqual(source["pdf_pages_extracted"], 40)
+        self.assertTrue(source["pdf_truncated"])
+
+    def test_pdf_financial_facts_reach_the_research_answer(self):
+        pdf = _minimal_pdf(["NVDA FY2025 " + "X" * 3200 + "Revenue 100 million USD. " + "Y" * 3500])
+        fetcher = _public_pdf_fetcher(pdf)
+        research = PublicResearch(
+            cache=None,
+            fetch=fetcher.get,
+            search=lambda queries, timeout: [{
+                "url": "https://sec.gov/Archives/edgar/data/1/annual-report.pdf",
+                "title": "NVDA FY2025 annual report",
+            }],
+        )
+        calls = []
+
+        def model(data, *args, **kwargs):
+            calls.append(data)
+            phase = data["phase"]
+            if phase == "investment_plan":
+                return {"targets": [{"company": "NVIDIA", "ticker": "NVDA", "market": "US"}]}, {}
+            if phase == "investment_extract":
+                return {"facts": [{"name": "Revenue", "value": "100", "unit": "million",
+                    "currency": "USD", "period": "FY2025", "source_ids": ["S1"]}], "claims": []}, {}
+            if phase == "investment_analysis":
+                return {"scope": "service", "analysis": "FY2025 revenue was 100 million USD [S1]."}, {}
+            return {"scope": "service", "answer": "结论：FY2025 revenue was 100 million USD [S1]."}, {}
+
+        result, _, _ = run_research({"question": "分析美股NVDA的年度表现"}, None,
+            "https://api.apiroute.asia/v1", model_call=model, research=research)
+        self.assertEqual(len(calls), MAX_MODEL_CALLS)
+        self.assertIn("FY2025 revenue was 100 million USD", result["answer"])
+        self.assertIn("| Revenue | 100 USD million | FY2025 | 单一来源 | [S1] sec.gov |", result["answer"])
+        self.assertIn("NVDA FY2025 annual report", result["answer"])
+        self.assertIn("资料状态：部分覆盖", result["answer"])
+        self.assertIn("PDF正文解析1/1页（受限截断）", result["answer"])
 
     def test_ephemeral_fetch_never_exceeds_ten_total_public_requests(self):
         fetched = []

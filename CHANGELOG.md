@@ -9,4 +9,5 @@ User-facing bot changes are recorded here in reverse chronological order. Dates 
 - Limited personalized position analysis to information explicitly shared by the asking member in the current question or relevant group history; the bot does not persist investment profiles.
 - Answered stock-research capability questions locally instead of sending them through company research.
 - Resolved company names without requiring a security code, searched across supported markets when needed, prioritized matching public sources, and avoided exposing an internal unknown-market marker.
+- Added bounded text extraction for public PDF reports so verified financial figures can reach the existing research answer and cross-check table; partial documents are labeled accordingly.
 - Added seven-day retention of normalized investment failure codes for operator diagnosis, without storing chat text or credentials.
