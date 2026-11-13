@@ -2,6 +2,10 @@
 
 User-facing bot changes are recorded here in reverse chronological order. Dates use `YYYY-MM-DD`.
 
+## 2026-11-13
+
+- Updated private member bindings and aliases for an existing shared usage bucket; rankings label the shared bucket and count its usage once.
+
 ## 2026-11-11
 
 - Added an AI Berkshire-inspired investment research flow with 22 fixed research entry points for A-shares, Hong Kong, U.S., and Taiwan stocks, using verifiable public sources with data timestamps.
