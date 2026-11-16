@@ -2,6 +2,10 @@
 
 User-facing bot changes are recorded here in reverse chronological order. Dates use `YYYY-MM-DD`.
 
+## 2026-11-16
+
+- Added an optional isolated IP model routing proxy for the Sub2API gateway, including HTTP/SSE and Responses WebSocket support, unchanged API-key attribution, deterministic tests, deployment guidance, and rollback steps.
+
 ## 2026-11-13
 
 - Updated private member bindings and aliases for an existing shared usage bucket; rankings label the shared bucket and count its usage once.
