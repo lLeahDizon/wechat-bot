@@ -2,6 +2,12 @@
 
 User-facing bot changes are recorded here in reverse chronological order. Dates use `YYYY-MM-DD`.
 
+## 2026-11-17
+
+- Added anonymous shared-account quota queries, distinct from personal Key Token/cost usage and rankings. Duplicate authorizations share one latest valid quota snapshot; invalid, expired, or stale windows are labeled explicitly.
+- Added a local development-use recommendation, with one optional model call for detailed follow-ups. Suggestions account for server mapping and never invent per-model quota savings or remaining request counts.
+- Show natural reset/sample times and cached reset-opportunity expiry times in Beijing time to the minute. Conflicting reset counts remain unknown, and caches without sampling time are labeled accordingly. Queries never probe models, refresh credentials, or perform resets.
+
 ## 2026-11-16
 
 - Added an optional isolated IP model routing proxy for the Sub2API gateway, including HTTP/SSE and Responses WebSocket support, unchanged API-key attribution, deterministic tests, deployment guidance, and rollback steps.

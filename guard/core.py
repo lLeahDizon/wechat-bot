@@ -355,10 +355,14 @@ class Engine:
             decision.reply, decision.category = SECRET_INPUT, "sensitive_input"
             return decision
         general=bool(self.config.get('general_enabled'))
+        from .account_quota import privacy_text,RESET_ACTION
+        if self.config.get('diagnostics_enabled') and RESET_ACTION.search(text) and re.search(r'账号|帐号|上游|额度|配额',text):
+            decision.reply='群内只查询额度与重置机会，不执行额度重置或消耗重置次数。';decision.category='write_disabled'
+            return decision
         if general and _SERVER_WRITE.search(text) and _SERVICE_TOPIC.search(text):
             decision.reply='群内服务器管理仅开放只读排查，不执行写入、删除、重启或配置变更。';decision.category='write_disabled'
             return decision
-        if (_PRIVATE_DATA if general else _PRIVATE_REQUEST).search(text):
+        if (_PRIVATE_DATA if general else _PRIVATE_REQUEST).search(privacy_text(text)):
             if decision.intent=='feedback':return self.reject_feedback(decision,'safety')
             decision.reply, decision.category = ('这部分涉及内部信息，暂时不能在群内提供哦。你可以补充脱敏现象，我会继续帮你看。' if decision.tone=='gentle' else PRIVATE), "private"
             return decision
@@ -543,6 +547,19 @@ class Engine:
                 return decision
         usage=clarification=None
         if self.config.get('diagnostics_enabled'):
+            from .account_quota import request_for as quota_request
+            quota,quota_error,detailed=quota_request(text,
+                follow=self.last_domains.get(decision.subject,(0,''))[1]=='account_quota',
+                aliases=self.config.get('usage_public_aliases'),bound_member=bool(profile.get('usage_target')))
+            if quota or quota_error:
+                decision.intent='account_quota';decision.usage_request=quota;decision.reply=quota_error
+                decision.category='usage' if quota else 'usage_clarification'
+                if quota and detailed:
+                    history=self.contexts.get(decision.subject+':account_quota',(0,[]))[1]
+                    decision.model_input={'domain':'account_quota','phase':'account_quota_advice','question':text,
+                        'context':[{'question':q,'answer':a} for q,a in history[-2:]],'facts':[],
+                        'diagnostic':False,'tone':decision.tone}
+                return decision
             from .usage import request_for
             usage,clarification=request_for(text,profile,self.config.get('usage_public_aliases'))
         if usage or clarification:
@@ -716,7 +733,7 @@ class Engine:
             self.db.execute("INSERT OR REPLACE INTO questions VALUES (?,?,?,?,?)",
                 (decision.subject, decision.fingerprint, decision.status_hash, decision.reference, now))
         if decision.category in {"answer", "faq", "usage"} and decision.question:
-            domain=decision.intent if decision.intent in {'lol','general'} else 'service'
+            domain=decision.intent if decision.intent in {'lol','general','account_quota'} else 'service'
             key=decision.subject+(':'+domain if domain!='service' else '')
             history = self.contexts.get(key, (0, []))[1]
             self.contexts[key] = (now, (history + [(decision.question, decision.reply)])[-2:])

@@ -1,14 +1,11 @@
 """Privileged fixed readers. No caller-supplied command, SQL, filename or URL."""
 from __future__ import annotations
 
-import datetime
 import json
 import math
 import os
 from pathlib import Path
 import re
-import socket
-import ssl
 import subprocess
 import threading
 import time
@@ -218,6 +215,12 @@ class Sources:
         # A deleted/expired binding has no rows and is not silently rebound.
         return data
 
+    def account_quota(self):
+        from guard.account_quota import snapshot_data
+        rows=self.sql("SELECT coalesce(json_agg(x),'[]'::json) FROM "
+            "(SELECT * FROM bot_diagnostics.account_quota LIMIT 16) x")
+        return snapshot_data(rows)
+
     def member_usage(self,target,metrics,period,window,rank,range_start_epoch=None,range_end_epoch=None):
         if target=='all':selector='TRUE'
         else:
@@ -289,6 +292,7 @@ print(json.dumps(result))
         op=request['op'];window=request['window_minutes']
         if op in {'overview','services','resources','host','database','configuration','connectivity'}:return getattr(self,op)()
         if op in {'traffic','events'}:return getattr(self,op)(window)
+        if op=='account_quota':return self.account_quota()
         if op=='token_usage':return self.token_usage(request['target'],request['period'],window)
         if op=='member_usage':return self.member_usage(request['target'],request['metrics'],request['period'],window,
             request['rank'],request.get('range_start_epoch'),request.get('range_end_epoch'))

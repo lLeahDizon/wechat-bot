@@ -169,16 +169,28 @@ class Sub2APIGuard(Star):
                 if decision.admin_request:
                     decision.reply='群内服务器管理仅开放只读排查，不执行写入、删除、重启或配置变更。'
                 elif decision.usage_request:
-                    decision.contains_personal_usage=True
+                    quota=decision.usage_request.get('op')=='account_quota'
+                    decision.contains_personal_usage=not quota
                     evidence=await asyncio.to_thread(QueryBudget().query,decision.usage_request)
                     decision.evidence_ids.add(evidence['id'])
                     decision.reference=evidence['id']
-                    decision.reply=format_member_usage(evidence,decision.tone,decision.token_unit,
-                        self.engine.config.get('usage_public_names',{}),
-                        commentary=decision.usage_request.get('commentary') is True)
-                elif decision.model_input:
+                    if quota:
+                        from .guard.account_quota import format_account_quota
+                        summary=format_account_quota(evidence,decision.tone)
+                        if decision.model_input:
+                            decision.model_input.update(account_quota_evidence=evidence,quota_summary=summary)
+                        else:decision.reply=summary
+                    else:
+                        decision.reply=format_member_usage(evidence,decision.tone,decision.token_unit,
+                            self.engine.config.get('usage_public_names',{}),
+                            commentary=decision.usage_request.get('commentary') is True)
+                if decision.model_input and not decision.reply:
                     try:
-                        if decision.intent=='feedback':
+                        if decision.intent=='account_quota':
+                            from .guard.account_quota import advice_answer
+                            result,usages=await asyncio.to_thread(advice_answer,decision.model_input,KEY,self.engine.config['api_base'])
+                            for usage in usages:self.engine.record_usage(usage)
+                        elif decision.intent=='feedback':
                             result,usages=await asyncio.to_thread(review_feedback,decision.model_input,KEY,self.engine.config['api_base'])
                             for usage in usages:self.engine.record_usage(usage)
                             if result.get('failure'):raise ModelFailure(result['failure'])

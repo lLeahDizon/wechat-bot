@@ -28,7 +28,7 @@ def main():
     views=query("SELECT json_build_object('view_count',count(*),'all_select',bool_and(has_table_privilege(current_user,c.oid,'SELECT')),"
         "'any_write',bool_or(has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))) "
         "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='bot_diagnostics' AND c.relkind='v'")
-    if views!={'view_count':7,'all_select':True,'any_write':False}:raise RuntimeError('view_privilege_mismatch')
+    if views!={'view_count':8,'all_select':True,'any_write':False}:raise RuntimeError('view_privilege_mismatch')
     # LIMIT 0 asks the authorization layer and never reads any secret value.
     for sql in ['SELECT key FROM public.api_keys LIMIT 0','SELECT credentials FROM public.accounts LIMIT 0']:
         p=subprocess.run(['docker','exec','-i','sub2api-postgres','psql','-X','-qAt','-U','bot_diagnostics_ro','-d','sub2api','-v','ON_ERROR_STOP=1'],

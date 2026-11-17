@@ -6,7 +6,7 @@ import math
 import re
 import time
 
-OPS = {'overview','services','resources','host','database','traffic','events','configuration','connectivity','token_usage','member_usage'}
+OPS = {'overview','services','resources','host','database','traffic','events','configuration','connectivity','token_usage','member_usage','account_quota'}
 WINDOWS = {5,15,60,1440}
 TARGETS = {'flower','gentle','both'}
 SUBJECT_RE = re.compile(r'^(?:flower|gentle|member_[a-f0-9]{16})$')
