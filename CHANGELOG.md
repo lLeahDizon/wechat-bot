@@ -4,6 +4,7 @@ User-facing bot changes are recorded here in reverse chronological order. Dates 
 
 ## 2026-11-17
 
+- Split a previously shared member-usage binding into independent Key statistics, added a public member alias, and removed the old shared ranking label. Personal queries and historical ranges use each member's newly bound Key only.
 - Added anonymous shared-account quota queries, distinct from personal Key Token/cost usage and rankings. Duplicate authorizations share one latest valid quota snapshot; invalid, expired, or stale windows are labeled explicitly.
 - Added a local development-use recommendation, with one optional model call for detailed follow-ups. Suggestions account for server mapping and never invent per-model quota savings or remaining request counts.
 - Show natural reset/sample times and cached reset-opportunity expiry times in Beijing time to the minute. Reset opportunities use the first created active authorization, with caches lacking sampling time labeled accordingly; other authorizations do not override that count.
