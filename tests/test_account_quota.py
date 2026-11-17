@@ -39,13 +39,20 @@ def row(used=86, age=20, count=2):
         "reset_credit_expirations": [
             stamp(NOW + (index + 10) * 86400 + 35) for index in range(count)
         ],
+        "points_present": True,
+        "points_available": True,
+        "points_unlimited": False,
+        "points_balance": "12345.6789015000",
+        "points_sampled_at": NOW - age,
     }
 
 
 def result(rows=None):
+    rows = [{"record_order": index + 1, **item} for index, item in
+            enumerate(rows or [row(), row(age=40)])]
     return evidence(
         "account_quota",
-        snapshot_data(rows or [row(), row(age=40)], NOW),
+        snapshot_data(rows, NOW),
         captured_at=NOW,
     )
 
@@ -138,20 +145,31 @@ class QuotaSnapshotTests(unittest.TestCase):
             item["weekly_reset_at"] = stamp(NOW + 600)
         self.assertIn("有窗口即将重置", format_account_quota(result(rows), now=NOW))
 
-    def test_conflicting_reset_counts_are_unknown_even_with_new_usage_sample(self):
+    def test_reset_count_uses_first_created_record_while_percentage_uses_latest(self):
         text = format_account_quota(
-            result([row(count=3), row(count=2, age=1)]), now=NOW
+            result([row(85, count=3, age=40), row(86, count=2, age=1)]), now=NOW
         )
-        self.assertIn("重置次数暂无法确认（缓存不一致）", text)
-        self.assertNotIn("缓存记录：2次", text)
-        self.assertNotIn("缓存记录：3次", text)
+        self.assertIn("剩余可用重置次数：3次", text)
+        self.assertNotIn("重置次数暂无法确认", text)
+        self.assertNotIn("重置次数：2次", text)
         self.assertIn("剩余14.00%", text)
+
+    def test_primary_reset_selection_does_not_depend_on_returned_row_order(self):
+        first = {**row(count=3), "record_order": 1}
+        second = {**row(count=2), "record_order": 2}
+        text = format_account_quota(result([second, first]), now=NOW)
+        self.assertIn("剩余可用重置次数：3次", text)
+        first["reset_credit_snapshot_present"] = False
+        self.assertIn("重置次数暂无法确认", format_account_quota(result([second, first]), now=NOW))
+        first["record_order"] = 2
+        self.assertIn("重置次数暂无法确认", format_account_quota(result([second, first]), now=NOW))
 
     def test_matching_reset_cache_discloses_absence_of_timestamp_and_minute_expiry(
         self,
     ):
         text = format_account_quota(result(), now=NOW)
-        self.assertIn("缓存记录：2次", text)
+        self.assertIn("剩余可用重置次数：2次", text)
+        self.assertIn("第一条账号缓存", text)
         self.assertIn("采样时间未提供，可能已变化", text)
         self.assertIn("每次机会失效时间（北京时间）", text)
         self.assertIn("2030-01-11 10:00", text)
@@ -163,13 +181,41 @@ class QuotaSnapshotTests(unittest.TestCase):
         rows = [row(), row()]
         for item in rows:
             item["reset_credit_snapshot_present"] = False
-        self.assertNotIn("缓存记录：0次", format_account_quota(result(rows), now=NOW))
+        self.assertNotIn("重置次数：0次", format_account_quota(result(rows), now=NOW))
         for item in rows:
             item["reset_credit_snapshot_present"] = True
             item["reset_credit_expirations"][0] = stamp(NOW - 1)
         self.assertIn("重置次数暂无法确认", format_account_quota(result(rows), now=NOW))
         zero = format_account_quota(result([row(count=0), row(count=0)]), now=NOW)
-        self.assertIn("缓存记录：0次", zero)
+        self.assertIn("剩余可用重置次数：0次", zero)
+
+    def test_points_are_separate_two_decimal_primary_record_snapshots(self):
+        first, second = row(age=40), row(age=1)
+        second["points_balance"] = "50000"
+        text = format_account_quota(result([first, second]), now=NOW)
+        self.assertIn("可用点数：12345.68点", text)
+        self.assertNotIn("50000", text)
+        self.assertNotIn("$22078", text)
+        self.assertIn("点数采样北京时间2030-01-01 09:59", text)
+
+    def test_points_missing_zero_unlimited_stale_and_invalid_are_distinct(self):
+        cases = [
+            ({"points_present": False}, "可用点数：暂无有效数据"),
+            ({"points_available": False, "points_balance": None}, "可用点数：0.00点"),
+            ({"points_unlimited": True}, "可用点数：不限量"),
+            ({"points_balance": None}, "有可用点数，具体数值未提供"),
+            ({"points_sampled_at": NOW - 301}, "可用点数：最近一次记录，12345.68点"),
+            ({"points_sampled_at": NOW + 120}, "可用点数：暂无有效数据"),
+            ({"points_sampled_at": None}, "可用点数：暂无有效数据"),
+            ({"points_available": False, "points_balance": "100"}, "可用点数：暂无有效数据"),
+        ]
+        for changes, expected in cases:
+            with self.subTest(changes=changes):
+                text = format_account_quota(result([{**row(), **changes}, row()]), now=NOW)
+                self.assertIn(expected, text)
+        for value in [True, "NaN", "Infinity", -1, "1e9999"]:
+            text = format_account_quota(result([{**row(), "points_balance": value}, row()]), now=NOW)
+            self.assertIn("有可用点数，具体数值未提供", text)
 
     def test_unknown_fields_and_identity_never_enter_public_evidence(self):
         rows = [row(), row()]
@@ -229,6 +275,8 @@ class QuotaIntentTests(unittest.TestCase):
             "显示上游账号使用比例",
             "账号重置时间和剩余可用重置次数",
             "账号还有多少额度",
+            "账号可用点数",
+            "上游账号点数",
         ]:
             with self.subTest(text=text):
                 decision = self.engine.prepare(self.event(text))
@@ -333,6 +381,7 @@ class QuotaBoundaryTests(unittest.TestCase):
         self.assertEqual(data["status"], "ok")
         statement = sql.call_args.args[0]
         self.assertIn("bot_diagnostics.account_quota", statement)
+        self.assertIn("ORDER BY record_order", statement)
         self.assertNotIn("public.accounts", statement)
         self.assertNotIn("credentials", statement)
 
@@ -350,6 +399,8 @@ class QuotaBoundaryTests(unittest.TestCase):
         self.assertNotIn("account_identity", projection)
         self.assertNotIn("user_identity", projection)
         self.assertNotIn("credit_id", sql)
+        self.assertIn("row_number() OVER (ORDER BY a.id)", sql)
+        self.assertIn("codex_credits_snapshot", sql)
 
     def test_stale_or_missing_quota_never_calls_model_for_detailed_followup(self):
         for proof in [

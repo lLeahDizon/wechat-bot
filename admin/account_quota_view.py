@@ -44,6 +44,18 @@ def view_sql():
             f"FROM jsonb_array_elements({credits}) credit) END END AS reset_credit_expirations",
         ]
     )
+    points = "a.extra->'codex_credits_snapshot'"
+    details = f"{points}->'credits'"
+    balance = f"btrim({details}->>'balance')"
+    sampled = f"{points}->>'fetched_at'"
+    columns.extend([
+        "row_number() OVER (ORDER BY a.id) AS record_order",
+        f"coalesce(jsonb_typeof({details})='object',false) AS points_present",
+        f"CASE WHEN jsonb_typeof({details}->'has_credits')='boolean' THEN ({details}->>'has_credits')::boolean END AS points_available",
+        f"CASE WHEN jsonb_typeof({details}->'unlimited')='boolean' THEN ({details}->>'unlimited')::boolean END AS points_unlimited",
+        f"CASE WHEN jsonb_typeof({details}->'balance')='string' AND {balance} ~ '^[0-9]{{1,15}}(\\.[0-9]{{1,12}})?$' THEN {balance} END AS points_balance",
+        f"CASE WHEN {sampled} ~ '^[0-9]{{1,12}}$' THEN ({sampled})::bigint END AS points_sampled_at",
+    ])
     projection = ",\n ".join(columns)
     return f"""BEGIN;
 SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='5s';
@@ -59,7 +71,7 @@ DO $guard$ BEGIN
 END $guard$;
 CREATE OR REPLACE VIEW bot_diagnostics.account_quota WITH (security_barrier=true) AS
  WITH eligible AS (
-  SELECT extra,
+  SELECT id,extra,
    CASE WHEN jsonb_typeof(credentials->'chatgpt_account_id')='string' THEN nullif(btrim(credentials->>'chatgpt_account_id'),'') END AS account_identity,
    CASE WHEN jsonb_typeof(credentials->'chatgpt_user_id')='string' THEN nullif(btrim(credentials->>'chatgpt_user_id'),'') END AS user_identity
   FROM public.accounts WHERE deleted_at IS NULL AND platform='openai' AND type='oauth' AND status='active' AND schedulable

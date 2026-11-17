@@ -304,20 +304,23 @@ async def check():
   qr={'eligible_records':2,'identity_count':1,'unidentified_records':0,'sampled_at':iso(now-20),
       'short_used_percent':0,'short_window_minutes':0,'short_reset_at':iso(now-20),
       'weekly_used_percent':86,'weekly_window_minutes':10080,'weekly_reset_at':iso(now+86400),
-      'reset_credit_snapshot_present':True,'reset_credit_count':2,
+      'record_order':1,'reset_credit_snapshot_present':True,'reset_credit_count':2,
+      'points_present':True,'points_available':True,'points_unlimited':False,
+      'points_balance':'12345.6789015000','points_sampled_at':now-10,
       'reset_credit_expirations':[iso(now+864000),iso(now+950400)]}
   quota_queries=[]
   def quota_query(request):
    assert request=={'op':'account_quota','window_minutes':15}
    quota_queries.append(request)
-   return evidence('account_quota',quota_module.snapshot_data([qr,{**qr,'reset_credit_count':3}]))
+   return evidence('account_quota',quota_module.snapshot_data([qr,{**qr,'record_order':2,'reset_credit_count':3}]))
   m.QueryBudget=lambda:types.SimpleNamespace(query=quota_query)
   requests_before=guard.engine.db.execute('SELECT requests FROM usage').fetchone()[0]
   sent_before=len(sent)
   await guard.guard_message(E('账号用量','frame-account-quota',sender='fixture-quota-member'))
   quota_text=''.join(getattr(part,'text','') for part in sent[-1].chain)
   assert len(quota_queries)==1 and len(sent)==sent_before+1
-  assert '剩余14.00%' in quota_text and '重置次数暂无法确认' in quota_text
+  assert '剩余14.00%' in quota_text and normalize('剩余可用重置次数：2次') in quota_text
+  assert normalize('可用点数：12345.68点') in quota_text and '点数采样北京时间' in quota_text
   assert guard.engine.db.execute('SELECT requests FROM usage').fetchone()[0]==requests_before
   await guard.guard_message(E('账号用量','frame-account-quota-not-mentioned',mentioned=False))
   assert len(quota_queries)==1 and len(sent)==sent_before+1
@@ -331,7 +334,7 @@ async def check():
   assert '具体建议' in ''.join(getattr(part,'text','') for part in sent[-1].chain)
   assert guard.engine.db.execute('SELECT requests FROM usage').fetchone()[0]==requests_before+1
   await guard.terminate()
-  print(json.dumps({'account_quota_local_without_model':True,'account_quota_detail_one_call':True,'account_quota_strict_mention':True,'framework_import':True,'real_star_instantiation':True,'async_thread_usage_recording':True,'gentle_identity':True,'actual_member_bindings_replayed':3,'both_self_usage_selectors':True,'both_persona_formats':True,'public_alias_queries':3,'usage_personal_and_rank_replayed':True,'usage_dates_and_record_cost_replayed':True,'usage_commentary_and_auto_units_replayed':True,'question_review_isolated':True,'owner_aliases_recognized':True,'raw_identities_absent_from_model_input':True,'privacy_before_model':True,'feedback_two_stage_calls':2,'feedback_dedup_and_local_listing':True,'feedback_rollback':True,'clarification_same_sender_and_mention':True,'clarification_total_model_calls':2,'automatic_stat_units_replayed':True,'only_two_terminal_outcomes':True,'all_member_server_writes_disabled':True,'general_topics_and_public_research':True,'strict_mention_and_persistent_group_context':True,'nonmention_messages_no_reply_or_history_read':True,'group_context_speaker_anonymized':True,'league_one_call_and_no_server_queries':True,'league_repeat_and_faq_local':True,'esports_internal_sources_no_visible_footer':True,'lol_version_question_recognized':True,'prediction_summary_and_key_focus':True,'reminders_member_confirmation_and_native_client_send_dedup':True,'actual_server_writes':0,'actual_model_calls':0,'actual_messages_sent':0}))
+  print(json.dumps({'account_points_local':True,'primary_reset_record':True,'account_quota_local_without_model':True,'account_quota_detail_one_call':True,'account_quota_strict_mention':True,'framework_import':True,'real_star_instantiation':True,'async_thread_usage_recording':True,'gentle_identity':True,'actual_member_bindings_replayed':3,'both_self_usage_selectors':True,'both_persona_formats':True,'public_alias_queries':3,'usage_personal_and_rank_replayed':True,'usage_dates_and_record_cost_replayed':True,'usage_commentary_and_auto_units_replayed':True,'question_review_isolated':True,'owner_aliases_recognized':True,'raw_identities_absent_from_model_input':True,'privacy_before_model':True,'feedback_two_stage_calls':2,'feedback_dedup_and_local_listing':True,'feedback_rollback':True,'clarification_same_sender_and_mention':True,'clarification_total_model_calls':2,'automatic_stat_units_replayed':True,'only_two_terminal_outcomes':True,'all_member_server_writes_disabled':True,'general_topics_and_public_research':True,'strict_mention_and_persistent_group_context':True,'nonmention_messages_no_reply_or_history_read':True,'group_context_speaker_anonymized':True,'league_one_call_and_no_server_queries':True,'league_repeat_and_faq_local':True,'esports_internal_sources_no_visible_footer':True,'lol_version_question_recognized':True,'prediction_summary_and_key_focus':True,'reminders_member_confirmation_and_native_client_send_dedup':True,'actual_server_writes':0,'actual_model_calls':0,'actual_messages_sent':0}))
 asyncio.run(check())
 '''
 

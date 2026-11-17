@@ -13,7 +13,7 @@ MAX_EPOCH = 253402300799
 STALE_SECONDS = 300
 ACCOUNT = re.compile(r"账号|帐号|(?:上游|共享|当前|服务)(?:账户|套餐)|^(?:账户|套餐)")
 METRIC = re.compile(
-    r"用量|额度|配额|余额|百分|比例|剩|余量|可用|重置|使用率|使用情况|还能用"
+    r"用量|额度|配额|余额|点数|积分|百分|比例|剩|余量|可用|重置|使用率|使用情况|还能用"
 )
 PERSONAL = re.compile(
     r"(?<![A-Za-z])keys?(?![A-Za-z])|密钥|tokens?|令牌|美元|费用|消费|排行|排名|\$",
@@ -32,7 +32,7 @@ OTHER_ACCOUNT = re.compile(
     r"github|gitlab|aws|阿里云|腾讯云|银行卡|运营商|手机话费", re.I
 )
 PUBLIC_SUBJECT = re.compile(
-    r"上游(?:账号|帐号|账户)(?=[\s的]*(?:用量|额度|配额|使用|剩余|余额|周|短期|周期|重置|百分))"
+    r"上游(?:账号|帐号|账户)(?=[\s的]*(?:用量|额度|配额|点数|积分|使用|剩余|余额|周|短期|周期|重置|百分))"
 )
 RESET_ACTION = re.compile(
     r"(?:执行|触发|消耗).{0,8}重置|(?:帮我|立刻|马上|直接).{0,10}重置|^重置(?:一下|账号|帐号|额度|配额)"
@@ -195,29 +195,32 @@ def snapshot_data(rows, now=None):
         "status": "ok",
         "windows": windows,
         "reset_credits": reset_credit_data(rows, now),
+        "points": point_data(rows, now),
     }
 
 
+def primary_record(rows):
+    # The view ranks active authorizations by record ID without exposing IDs.
+    matches = [row for row in rows if type(row.get("record_order")) is int and row["record_order"] == 1]
+    return matches[0] if len(matches) == 1 else {}
+
+
 def reset_credit_data(rows, now):
-    snapshots = []
-    for row in rows:
-        count = row.get("reset_credit_count")
-        raw = row.get("reset_credit_expirations")
-        if (
-            row.get("reset_credit_snapshot_present") is not True
-            or type(count) is not int
-            or not 0 <= count <= 32
-            or not isinstance(raw, list)
-            or len(raw) != count
-        ):
-            return {"state": "unavailable"}
-        values = [epoch(item) for item in raw]
-        if any(item is None for item in values):
-            return {"state": "unavailable"}
-        snapshots.append((count, tuple(sorted(values))))
-    if len(set(snapshots)) != 1:
-        return {"state": "conflict"}
-    count, expires = snapshots[0]
+    row = primary_record(rows)
+    count = row.get("reset_credit_count")
+    raw = row.get("reset_credit_expirations")
+    if (
+        row.get("reset_credit_snapshot_present") is not True
+        or type(count) is not int
+        or not 0 <= count <= 32
+        or not isinstance(raw, list)
+        or len(raw) != count
+    ):
+        return {"state": "unavailable"}
+    expires = [epoch(item) for item in raw]
+    if any(item is None for item in expires):
+        return {"state": "unavailable"}
+    expires.sort()
     if any(value <= now for value in expires):
         return {"state": "expired"}
     # These are stored opportunities, not proof that a credit remains unspent.
@@ -228,6 +231,35 @@ def reset_credit_data(rows, now):
         "expires_at": list(expires),
         "sampled_at": None,
     }
+
+
+def point_value(value):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        result = Decimal(str(value))
+        if not result.is_finite() or not 0 <= result < Decimal("1e15"):
+            return None
+        return result.quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
+    except (ValueError, TypeError, InvalidOperation):
+        return None
+
+
+def point_data(rows, now):
+    row = primary_record(rows)
+    sampled = epoch(row.get("points_sampled_at"))
+    available, unlimited = row.get("points_available"), row.get("points_unlimited")
+    if (row.get("points_present") is not True or type(available) is not bool
+            or type(unlimited) is not bool or sampled is None or sampled > now + 60):
+        return {"state": "unavailable"}
+    balance = point_value(row.get("points_balance"))
+    if not unlimited and not available:
+        if balance is not None and balance != 0:
+            return {"state": "unavailable"}
+        balance = Decimal("0.00")
+    return {"state": "stale" if now - sampled > STALE_SECONDS else "cached",
+            "balance": str(balance) if balance is not None else None,
+            "unlimited": unlimited, "available": available, "sampled_at": sampled}
 
 
 def _minute(value):
@@ -334,7 +366,7 @@ def format_account_quota(result, tone="default", now=None):
         )
     ):
         lines.append(
-            f"可用重置次数缓存记录：{credits['count']}次（采样时间未提供，可能已变化）。"
+            f"剩余可用重置次数：{credits['count']}次（第一条账号缓存，采样时间未提供，可能已变化）。"
         )
         if credits["expires_at"]:
             lines.append(
@@ -343,12 +375,22 @@ def format_account_quota(result, tone="default", now=None):
                 + "。"
             )
     else:
-        reason = (
-            "缓存不一致"
-            if isinstance(credits, dict) and credits.get("state") == "conflict"
-            else "缺少可核实的有效快照"
-        )
-        lines.append("剩余可用重置次数暂无法确认（" + reason + "）。")
+        lines.append("剩余可用重置次数暂无法确认（第一条账号缺少可核实的有效快照）。")
+    points = data.get("points", {})
+    sampled = epoch(points.get("sampled_at")) if isinstance(points, dict) else None
+    if (isinstance(points, dict) and points.get("state") in {"cached", "stale"}
+            and sampled is not None and sampled <= now + 60):
+        record = "最近一次记录，" if now - sampled > STALE_SECONDS else ""
+        if points.get("unlimited") is True:
+            description = "不限量"
+        elif point_value(points.get("balance")) is not None:
+            description = f"{point_value(points['balance']):.2f}点"
+        else:
+            description = "有可用点数，具体数值未提供"
+        lines.append("可用点数：" + record + description + "。")
+        lines.append(f"点数采样北京时间{_minute(sampled)}。")
+    else:
+        lines.append("可用点数：暂无有效数据。")
     note = recommendation(data, now)
     if note:
         lines.append(note)

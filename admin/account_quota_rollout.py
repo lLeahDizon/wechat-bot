@@ -54,7 +54,7 @@ def check_patch(patch, expected):
         if not added.isdecimal() or not removed.isdecimal() or name not in SOURCE_PATHS:
             raise ValueError("patch_path_not_allowed")
         names.append(name)
-    if len(names) != len(SOURCE_PATHS) or set(names) != SOURCE_PATHS:
+    if not names or len(names) != len(set(names)):
         raise ValueError("patch_scope_mismatch")
 
 
@@ -142,7 +142,8 @@ def verify_prepared():
     probe = run(["python3", str(ROOT / "code/admin/framework_probe.py")], timeout=55)
     rows = [json.loads(line) for line in probe.splitlines() if line.startswith("{")]
     required = ["account_quota_local_without_model", "account_quota_detail_one_call",
-                "account_quota_strict_mention", "usage_personal_and_rank_replayed"]
+                "account_quota_strict_mention", "usage_personal_and_rank_replayed",
+                "account_points_local", "primary_reset_record"]
     value = rows[-1] if rows else {}
     if (any(value.get(name) is not True for name in required)
             or any(value.get(name) != 0 for name in
@@ -231,11 +232,15 @@ def verify_live():
 
 
 def main():
+    global RECEIPT
     os.umask(0o077)
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=["prepare", "verify-prepared", "activate", "verify-live"])
     parser.add_argument("--patch-sha256")
+    parser.add_argument("--revision", choices=["initial", "primary-reset-points"], default="initial")
     args = parser.parse_args()
+    if args.revision != "initial":
+        RECEIPT = ROOT / "admin-evidence" / ("account-quota-" + args.revision + ".json")
     if args.stage == "prepare":
         value = prepare(sys.stdin.read(128 * 1024 + 1), args.patch_sha256)
     else:

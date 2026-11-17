@@ -42,11 +42,18 @@ the bot query ran. Samples over five minutes old are labeled as previous records
 Percentages have two decimals; reset, sample, and expiry times use Beijing time
 to the minute.
 
-Reset opportunities are separate from the natural quota window reset. Their
-stored snapshot has no independent sampling timestamp. Conflicting, missing,
-incomplete, or expired records do not yield a current count. Matching records are
-explicitly labeled as cached, possibly changed, with each opportunity's expiry;
-expiry is not a replenishment date. Quota sampling times cannot date that cache.
+Reset opportunities and spendable Codex points use the first created active
+authorization (record ID ascending, ranked internally without exposing IDs).
+Other authorization caches do not override this choice, even when newer or
+different. The reset count has no independent sampling timestamp and is labeled
+as cached, possibly changed, with each opportunity's expiry; expiry is not a
+replenishment date. Missing, incomplete, or expired data in the selected record
+remains unknown and does not fall back to another authorization.
+
+Points are shown separately from reset opportunities and personal Key costs,
+with two decimals and their own Beijing sampling time. A stale point snapshot is
+labeled as a previous record; missing data is not reported as zero, and unlimited
+points are explicit. Quota sampling times cannot date either of these caches.
 
 The reader never calls usage/quota management APIs, probes a model, refreshes
 credentials, consumes reset opportunities, or changes account mappings. Only
@@ -65,3 +72,5 @@ restricted rollback/evidence locations. Verification uses a network-disabled
 framework fixture and the read-only database role. Activation records each
 restart attempt before issuing it; an interrupted or uncertain activation must
 be reconciled from its receipt rather than rerun.
+The bounded `--revision primary-reset-points` rollout uses a separate receipt
+and rollback snapshot for the primary-record selection and points extension.

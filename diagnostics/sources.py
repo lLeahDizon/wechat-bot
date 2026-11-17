@@ -218,7 +218,7 @@ class Sources:
     def account_quota(self):
         from guard.account_quota import snapshot_data
         rows=self.sql("SELECT coalesce(json_agg(x),'[]'::json) FROM "
-            "(SELECT * FROM bot_diagnostics.account_quota LIMIT 16) x")
+            "(SELECT * FROM bot_diagnostics.account_quota ORDER BY record_order LIMIT 16) x")
         return snapshot_data(rows)
 
     def member_usage(self,target,metrics,period,window,rank,range_start_epoch=None,range_end_epoch=None):
