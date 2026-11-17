@@ -54,6 +54,9 @@ Points are shown separately from reset opportunities and personal Key costs,
 with two decimals and their own Beijing sampling time. A stale point snapshot is
 labeled as a previous record; missing data is not reported as zero, and unlimited
 points are explicit. Quota sampling times cannot date either of these caches.
+Replies combine each value with its timestamp, use one Beijing-time heading,
+and shorten same-year dates to month/day while retaining years across year
+boundaries. Cached or unavailable data remains explicit.
 
 The reader never calls usage/quota management APIs, probes a model, refreshes
 credentials, consumes reset opportunities, or changes account mappings. Only
@@ -74,3 +77,5 @@ restart attempt before issuing it; an interrupted or uncertain activation must
 be reconciled from its receipt rather than rerun.
 The bounded `--revision primary-reset-points` rollout uses a separate receipt
 and rollback snapshot for the primary-record selection and points extension.
+`--revision concise-replies` loads the presentation change with an AstrBot-only
+restart and verifies that the query service's process invocation is unchanged.

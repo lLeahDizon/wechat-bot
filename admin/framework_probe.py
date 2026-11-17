@@ -319,8 +319,9 @@ async def check():
   await guard.guard_message(E('账号用量','frame-account-quota',sender='fixture-quota-member'))
   quota_text=''.join(getattr(part,'text','') for part in sent[-1].chain)
   assert len(quota_queries)==1 and len(sent)==sent_before+1
-  assert '剩余14.00%' in quota_text and normalize('剩余可用重置次数：2次') in quota_text
-  assert normalize('可用点数：12345.68点') in quota_text and '点数采样北京时间' in quota_text
+  assert '剩余14.00%' in quota_text and normalize('重置机会：2次') in quota_text
+  assert normalize('点数：12345.68') in quota_text and '北京时间' in quota_text
+  assert len(quota_text.splitlines())==6 and quota_text.count('北京时间')==1
   assert guard.engine.db.execute('SELECT requests FROM usage').fetchone()[0]==requests_before
   await guard.guard_message(E('账号用量','frame-account-quota-not-mentioned',mentioned=False))
   assert len(quota_queries)==1 and len(sent)==sent_before+1

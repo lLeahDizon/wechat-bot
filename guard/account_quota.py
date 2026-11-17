@@ -269,6 +269,12 @@ def _minute(value):
     return datetime.datetime.fromtimestamp(stamp, BJT).strftime("%Y-%m-%d %H:%M")
 
 
+def _brief_time(value, now):
+    full = _minute(value)
+    year = datetime.datetime.fromtimestamp(now, BJT).year
+    return full[5:] if full.startswith(str(year) + "-") else full
+
+
 def usable_windows(data, now=None):
     now = time.time() if now is None else now
     valid = []
@@ -303,15 +309,15 @@ def recommendation(data, now=None):
     if not windows:
         return ""
     if any(w["state"] == "stale" for w in windows):
-        return "建议：快照已陈旧，先保守安排必要任务，当前剩余额度以新采样为准。"
+        return "建议：快照已陈旧，先保守安排必要任务。"
     remaining = min(percentage(w["remaining_percent"]) for w in windows)
     if any(w["reset_at"] - now <= 1800 for w in windows):
-        return "建议：有窗口即将重置，批量任务可稍后安排；关键排错仍按任务需要选择推理强度。"
+        return "建议：窗口即将重置，批量任务可稍后安排。"
     if remaining <= 10:
-        return "建议：优先关键开发任务，日常用medium和短上下文，复杂问题按需提高推理；批量任务可等重置。"
+        return "建议：优先关键任务，批量任务等重置。"
     if remaining <= 30:
-        return "建议：日常编码用medium并精简上下文，复杂排错再按需提高推理；实际模型以服务器映射为准。"
-    return "建议：日常编码用medium，复杂排错或架构任务按需提高推理；实际模型以服务器映射为准。"
+        return "建议：日常medium＋短上下文，复杂排错按需提高推理强度。"
+    return "建议：日常medium；复杂排错／架构按需提高推理强度。"
 
 
 def format_account_quota(result, tone="default", now=None):
@@ -331,27 +337,26 @@ def format_account_quota(result, tone="default", now=None):
     if len(kinds) != 2 or set(kinds) != {"short_term", "weekly"}:
         return "账号额度窗口格式异常，本次不猜测百分比。"
     valid = {item.get("kind"): item for item in usable_windows(data, now)}
-    lines = ["查到啦，共享账号额度：" if tone == "gentle" else "共享账号额度："]
+    lines = ["查到啦，共享账号额度（北京时间）" if tone == "gentle" else "共享账号额度（北京时间）"]
     for raw in data["windows"]:
         kind = raw.get("kind") if isinstance(raw, dict) else None
         if kind not in {"short_term", "weekly"}:
             continue
-        label = "周额度" if kind == "weekly" else "短期额度"
+        label = "周额度" if kind == "weekly" else "短期"
         item = valid.get(kind)
         if item:
             if kind == "weekly" and item.get("window_minutes") != 10080:
                 label = "较长期额度"
             record = "最近一次记录，" if item["state"] == "stale" else ""
             lines.append(
-                f"{label}：{record}已用{percentage(item['used_percent']):.2f}%，剩余{percentage(item['remaining_percent']):.2f}%；重置北京时间{_minute(item['reset_at'])}。"
+                f"{label}：{record}已用{percentage(item['used_percent']):.2f}%，剩余{percentage(item['remaining_percent']):.2f}%；{_brief_time(item['reset_at'], now)}重置（{_brief_time(item['sampled_at'], now)}采样）"
             )
-            lines.append(f"采样北京时间{_minute(item['sampled_at'])}。")
         elif raw.get("state") == "expired" or (
             epoch(raw.get("reset_at")) is not None and epoch(raw.get("reset_at")) <= now
         ):
-            lines.append(label + "：旧窗口已到重置时间，暂未取得新窗口数据。")
+            lines.append(label + "：旧窗口已到重置时间，暂无新数据")
         else:
-            lines.append(label + "：暂无有效数据。")
+            lines.append(label + "：暂无数据")
     credits = data.get("reset_credits", {})
     if (
         isinstance(credits, dict)
@@ -365,32 +370,26 @@ def format_account_quota(result, tone="default", now=None):
             for value in credits["expires_at"]
         )
     ):
-        lines.append(
-            f"剩余可用重置次数：{credits['count']}次（第一条账号缓存，采样时间未提供，可能已变化）。"
-        )
+        credit_line = f"重置机会：{credits['count']}次（缓存无采样时间）"
         if credits["expires_at"]:
-            lines.append(
-                "每次机会失效时间（北京时间）："
-                + "、".join(_minute(value) for value in credits["expires_at"])
-                + "。"
-            )
+            credit_line += "；失效：" + "、".join(_brief_time(value, now) for value in credits["expires_at"])
+        lines.append(credit_line)
     else:
-        lines.append("剩余可用重置次数暂无法确认（第一条账号缺少可核实的有效快照）。")
+        lines.append("重置机会：暂无法确认（所选缓存无效）")
     points = data.get("points", {})
     sampled = epoch(points.get("sampled_at")) if isinstance(points, dict) else None
     if (isinstance(points, dict) and points.get("state") in {"cached", "stale"}
             and sampled is not None and sampled <= now + 60):
-        record = "最近一次记录，" if now - sampled > STALE_SECONDS else ""
+        record = "旧记录" if now - sampled > STALE_SECONDS else "采样"
         if points.get("unlimited") is True:
             description = "不限量"
         elif point_value(points.get("balance")) is not None:
-            description = f"{point_value(points['balance']):.2f}点"
+            description = f"{point_value(points['balance']):.2f}"
         else:
             description = "有可用点数，具体数值未提供"
-        lines.append("可用点数：" + record + description + "。")
-        lines.append(f"点数采样北京时间{_minute(sampled)}。")
+        lines.append(f"点数：{description}（{_brief_time(sampled, now)}{record}）")
     else:
-        lines.append("可用点数：暂无有效数据。")
+        lines.append("点数：暂无数据")
     note = recommendation(data, now)
     if note:
         lines.append(note)

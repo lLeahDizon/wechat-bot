@@ -8,6 +8,7 @@ User-facing bot changes are recorded here in reverse chronological order. Dates 
 - Added a local development-use recommendation, with one optional model call for detailed follow-ups. Suggestions account for server mapping and never invent per-model quota savings or remaining request counts.
 - Show natural reset/sample times and cached reset-opportunity expiry times in Beijing time to the minute. Reset opportunities use the first created active authorization, with caches lacking sampling time labeled accordingly; other authorizations do not override that count.
 - Include spendable Codex points from the same authorization, with two decimals and a separate sampling time. Missing, zero, unlimited, and stale snapshots remain distinct. Queries never probe models, refresh credentials, or perform resets.
+- Condensed account quota replies by combining sampling/reset times, reset opportunities and expiry times, and the point snapshot; all times share one Beijing-time heading, with the year retained for cross-year dates.
 
 ## 2026-11-16
 

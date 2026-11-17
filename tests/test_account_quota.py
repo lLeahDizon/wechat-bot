@@ -69,7 +69,7 @@ class QuotaSnapshotTests(unittest.TestCase):
 
     def test_invalid_short_window_does_not_become_full_remaining_quota(self):
         text = format_account_quota(result(), now=NOW)
-        self.assertIn("短期额度：暂无有效数据", text)
+        self.assertIn("短期：暂无数据", text)
         self.assertNotIn("100.00%", text)
 
     def test_expired_window_does_not_become_a_new_zero_usage_window(self):
@@ -130,10 +130,10 @@ class QuotaSnapshotTests(unittest.TestCase):
 
     def test_threshold_boundaries_and_near_reset_are_distinct(self):
         for used, phrase in [
-            (69, "日常编码用medium"),
-            (70, "精简上下文"),
-            (89.99, "精简上下文"),
-            (90, "优先关键开发任务"),
+            (69, "日常medium"),
+            (70, "短上下文"),
+            (89.99, "短上下文"),
+            (90, "优先关键任务"),
         ]:
             with self.subTest(used=used):
                 self.assertIn(
@@ -143,37 +143,36 @@ class QuotaSnapshotTests(unittest.TestCase):
         rows = [row(), row()]
         for item in rows:
             item["weekly_reset_at"] = stamp(NOW + 600)
-        self.assertIn("有窗口即将重置", format_account_quota(result(rows), now=NOW))
+        self.assertIn("窗口即将重置", format_account_quota(result(rows), now=NOW))
 
     def test_reset_count_uses_first_created_record_while_percentage_uses_latest(self):
         text = format_account_quota(
             result([row(85, count=3, age=40), row(86, count=2, age=1)]), now=NOW
         )
-        self.assertIn("剩余可用重置次数：3次", text)
-        self.assertNotIn("重置次数暂无法确认", text)
-        self.assertNotIn("重置次数：2次", text)
+        self.assertIn("重置机会：3次", text)
+        self.assertNotIn("重置机会：暂无法确认", text)
+        self.assertNotIn("重置机会：2次", text)
         self.assertIn("剩余14.00%", text)
 
     def test_primary_reset_selection_does_not_depend_on_returned_row_order(self):
         first = {**row(count=3), "record_order": 1}
         second = {**row(count=2), "record_order": 2}
         text = format_account_quota(result([second, first]), now=NOW)
-        self.assertIn("剩余可用重置次数：3次", text)
+        self.assertIn("重置机会：3次", text)
         first["reset_credit_snapshot_present"] = False
-        self.assertIn("重置次数暂无法确认", format_account_quota(result([second, first]), now=NOW))
+        self.assertIn("重置机会：暂无法确认", format_account_quota(result([second, first]), now=NOW))
         first["record_order"] = 2
-        self.assertIn("重置次数暂无法确认", format_account_quota(result([second, first]), now=NOW))
+        self.assertIn("重置机会：暂无法确认", format_account_quota(result([second, first]), now=NOW))
 
     def test_matching_reset_cache_discloses_absence_of_timestamp_and_minute_expiry(
         self,
     ):
         text = format_account_quota(result(), now=NOW)
-        self.assertIn("剩余可用重置次数：2次", text)
-        self.assertIn("第一条账号缓存", text)
-        self.assertIn("采样时间未提供，可能已变化", text)
-        self.assertIn("每次机会失效时间（北京时间）", text)
-        self.assertIn("2030-01-11 10:00", text)
-        self.assertIn("重置北京时间2030-01-03 10:00", text)
+        self.assertIn("重置机会：2次", text)
+        self.assertIn("缓存无采样时间", text)
+        self.assertIn("；失效：", text)
+        self.assertIn("01-11 10:00", text)
+        self.assertIn("01-03 10:00重置", text)
         self.assertNotIn("10:00:35", text)
         self.assertNotIn("补充时间", text)
 
@@ -181,33 +180,46 @@ class QuotaSnapshotTests(unittest.TestCase):
         rows = [row(), row()]
         for item in rows:
             item["reset_credit_snapshot_present"] = False
-        self.assertNotIn("重置次数：0次", format_account_quota(result(rows), now=NOW))
+        self.assertNotIn("重置机会：0次", format_account_quota(result(rows), now=NOW))
         for item in rows:
             item["reset_credit_snapshot_present"] = True
             item["reset_credit_expirations"][0] = stamp(NOW - 1)
-        self.assertIn("重置次数暂无法确认", format_account_quota(result(rows), now=NOW))
+        self.assertIn("重置机会：暂无法确认", format_account_quota(result(rows), now=NOW))
         zero = format_account_quota(result([row(count=0), row(count=0)]), now=NOW)
-        self.assertIn("剩余可用重置次数：0次", zero)
+        self.assertIn("重置机会：0次", zero)
 
     def test_points_are_separate_two_decimal_primary_record_snapshots(self):
         first, second = row(age=40), row(age=1)
         second["points_balance"] = "50000"
         text = format_account_quota(result([first, second]), now=NOW)
-        self.assertIn("可用点数：12345.68点", text)
+        self.assertIn("点数：12345.68", text)
         self.assertNotIn("50000", text)
         self.assertNotIn("$22078", text)
-        self.assertIn("点数采样北京时间2030-01-01 09:59", text)
+        self.assertIn("01-01 09:59采样", text)
+
+    def test_concise_reply_preserves_times_and_cross_year_dates(self):
+        text = format_account_quota(result(), now=NOW)
+        self.assertEqual(len(text.splitlines()), 6)
+        self.assertEqual(text.count('北京时间'), 1)
+        self.assertLessEqual(len(text), 260)
+        self.assertIn('01-03 10:00重置', text)
+        self.assertIn('01-01 09:59采样', text)
+        self.assertIn('01-11 10:00', text)
+        boundary = datetime.datetime(2030, 12, 31, 2, 0, tzinfo=datetime.timezone.utc).timestamp()
+        with patch.dict(globals(), NOW=boundary):
+            new_year = format_account_quota(result(), now=boundary)
+        self.assertIn('2031-01-02 10:00重置', new_year)
 
     def test_points_missing_zero_unlimited_stale_and_invalid_are_distinct(self):
         cases = [
-            ({"points_present": False}, "可用点数：暂无有效数据"),
-            ({"points_available": False, "points_balance": None}, "可用点数：0.00点"),
-            ({"points_unlimited": True}, "可用点数：不限量"),
+            ({"points_present": False}, "点数：暂无数据"),
+            ({"points_available": False, "points_balance": None}, "点数：0.00"),
+            ({"points_unlimited": True}, "点数：不限量"),
             ({"points_balance": None}, "有可用点数，具体数值未提供"),
-            ({"points_sampled_at": NOW - 301}, "可用点数：最近一次记录，12345.68点"),
-            ({"points_sampled_at": NOW + 120}, "可用点数：暂无有效数据"),
-            ({"points_sampled_at": None}, "可用点数：暂无有效数据"),
-            ({"points_available": False, "points_balance": "100"}, "可用点数：暂无有效数据"),
+            ({"points_sampled_at": NOW - 301}, "旧记录"),
+            ({"points_sampled_at": NOW + 120}, "点数：暂无数据"),
+            ({"points_sampled_at": None}, "点数：暂无数据"),
+            ({"points_available": False, "points_balance": "100"}, "点数：暂无数据"),
         ]
         for changes, expected in cases:
             with self.subTest(changes=changes):

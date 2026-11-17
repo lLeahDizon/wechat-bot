@@ -71,7 +71,7 @@ def database(sql):
                input_text=sql, timeout=12)
 
 
-def prepare(patch, expected):
+def prepare(patch, expected, *, restart_query=True):
     task_root()
     if RECEIPT.exists():
         raise RuntimeError("quota_rollout_already_started_reconcile_receipt")
@@ -110,6 +110,8 @@ def prepare(patch, expected):
         "archive": archive.name, "archive_sha256": sha(archive),
         "previous_view": old_view, "protected_hashes": protected_hashes(),
         "before": before, "restart_attempts": {"query": 0, "astrbot": 0},
+        "restart_query": restart_query,
+        "query_invocation": run(["systemctl", "show", "sub2api-wechat-query.service", "--property=InvocationID", "--value"]).strip(),
     }
     write_json(RECEIPT, receipt)
     run(["git", "-C", str(code), "apply", "-"], input_text=patch)
@@ -149,7 +151,8 @@ def verify_prepared():
             or any(value.get(name) != 0 for name in
                    ["actual_server_writes", "actual_model_calls", "actual_messages_sent"])):
         raise RuntimeError("quota_framework_probe_failed")
-    database(view_sql())
+    if receipt.get("restart_query", True):
+        database(view_sql())
     run(["python3", str(ROOT / "code/admin/verify_readonly_permissions.py")], timeout=30)
     from diagnostics.sources import Sources
     from diagnostics.protocol import evidence, public_result
@@ -170,6 +173,8 @@ def activate():
     if current["containers"] != receipt["before"]["containers"]:
         raise RuntimeError("container_changed_before_activation")
     for name, target in runtime_targets().items():
+        if target.exists() and sha(ROOT / "code" / name) == sha(target):
+            continue
         if target.is_symlink() or target.parent.is_symlink():
             raise RuntimeError("runtime_symlink")
         temporary = target.with_name(target.name + ".quota.tmp")
@@ -179,9 +184,10 @@ def activate():
         temporary.chmod(0o444)
         os.replace(temporary, target)
     receipt.update(phase="activating", activation_at=time.time())
-    receipt["restart_attempts"]["query"] = 1
-    write_json(RECEIPT, receipt)
-    run(["systemctl", "restart", "sub2api-wechat-query.service"], timeout=15)
+    if receipt.get("restart_query", True):
+        receipt["restart_attempts"]["query"] = 1
+        write_json(RECEIPT, receipt)
+        run(["systemctl", "restart", "sub2api-wechat-query.service"], timeout=15)
     receipt["restart_attempts"]["astrbot"] = 1
     write_json(RECEIPT, receipt)
     run(["docker", "restart", "--time", "30", ASTRBOT], timeout=50)
@@ -194,6 +200,10 @@ def verify_live():
     receipt = check_receipt()
     if receipt["phase"] not in {"activated", "live_verified"}:
         raise RuntimeError("activated_phase_required")
+    if not receipt.get("restart_query", True):
+        invocation = run(["systemctl", "show", "sub2api-wechat-query.service", "--property=InvocationID", "--value"]).strip()
+        if invocation != receipt["query_invocation"]:
+            raise RuntimeError("query_service_changed_during_presentation_update")
     states = container_states()
     if any(states[name] != receipt["before"]["containers"][name] for name in PROTECTED):
         raise RuntimeError("protected_container_changed")
@@ -237,12 +247,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("stage", choices=["prepare", "verify-prepared", "activate", "verify-live"])
     parser.add_argument("--patch-sha256")
-    parser.add_argument("--revision", choices=["initial", "primary-reset-points"], default="initial")
+    parser.add_argument("--revision", choices=["initial", "primary-reset-points", "concise-replies"], default="initial")
     args = parser.parse_args()
     if args.revision != "initial":
         RECEIPT = ROOT / "admin-evidence" / ("account-quota-" + args.revision + ".json")
     if args.stage == "prepare":
-        value = prepare(sys.stdin.read(128 * 1024 + 1), args.patch_sha256)
+        value = prepare(sys.stdin.read(128 * 1024 + 1), args.patch_sha256,
+                        restart_query=args.revision != "concise-replies")
     else:
         value = {"verify-prepared": verify_prepared, "activate": activate, "verify-live": verify_live}[args.stage]()
     print(json.dumps(value, ensure_ascii=False))
