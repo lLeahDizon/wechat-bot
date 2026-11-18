@@ -507,13 +507,6 @@ class Engine:
                     decision.model_input['response_preferences']={k:v for k,v in preferences.items() if k in {'length','layout'}}
                     decision.model_input['service_guidance']=active_guidance(self.db,'lol')
                 return decision
-        row = self.db.execute("SELECT ref FROM questions WHERE subject=? AND fingerprint=? AND status_hash=?",
-            (decision.subject, decision.fingerprint, decision.status_hash)).fetchone()
-        if row and not _CORRECTION.search(text) and not (self.config.get('diagnostics_enabled') and _DYNAMIC.search(text)):
-            previous = next((x["answer"] for x in self.faq if x["id"] == row[0]), "请看前面已给出的答案；有新现象请补充具体变化。")
-            decision.reply = self.retort(decision.subject, "repeat",decision.tone) + "\n" + previous
-            decision.category, decision.reference = "repeat", row[0]
-            return decision
         if re.fullmatch(r"(?:/帮助|帮助|你能做什么|你是谁|使用说明)[?？。!！\s]*", text):
             decision.reply, decision.category = self.config["help"], "help"
             decision.reference = "scope"
@@ -566,6 +559,13 @@ class Engine:
             decision.usage_request=usage
             decision.reply=clarification
             decision.category='usage' if usage else 'usage_clarification'
+            return decision
+        row = self.db.execute("SELECT ref FROM questions WHERE subject=? AND fingerprint=? AND status_hash=?",
+            (decision.subject, decision.fingerprint, decision.status_hash)).fetchone()
+        if row and not _CORRECTION.search(text) and not (self.config.get('diagnostics_enabled') and _DYNAMIC.search(text)):
+            previous = next((x["answer"] for x in self.faq if x["id"] == row[0]), "请看前面已给出的答案；有新现象请补充具体变化。")
+            decision.reply = self.retort(decision.subject, "repeat",decision.tone) + "\n" + previous
+            decision.category, decision.reference = "repeat", row[0]
             return decision
         for entry in self.faq:
             if any(re.fullmatch(pattern, text, re.I) for pattern in entry.get("direct", [])):

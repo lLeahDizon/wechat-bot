@@ -140,6 +140,19 @@ class ExpandedPolicyTests(unittest.TestCase):
                 self.assertEqual(result.usage_request,{'op':'member_usage','target':'all','metrics':['tokens','usd'],
                     'period':'today','window_minutes':15,'rank':True})
                 self.assertIsNone(result.model_input)
+    def test_new_messages_repeat_usage_queries_but_replayed_messages_do_not(self):
+        for question in ('费用排行','Token排行','我的费用','账号额度'):
+            with self.subTest(question=question):
+                first=self.event(question,'q-stable')
+                decision=self.engine.prepare(first)
+                self.assertIsNotNone(decision.usage_request)
+                decision.reply='已查询';decision.reference='diag-test'
+                self.engine.delivered(first,decision,'replied')
+                self.assertIsNone(self.engine.prepare(first).usage_request)
+                second=self.engine.prepare(self.event(question,'q-stable'))
+                self.assertEqual(second.usage_request,decision.usage_request)
+                self.assertIsNone(second.reply)
+
     def test_rankings_share_both_metrics_for_short_and_long_ranges(self):
         result=self.engine.prepare(self.event('美元额度最近1小时排行'))
         self.assertEqual(result.usage_request['metrics'],['tokens','usd'])

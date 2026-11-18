@@ -5,6 +5,7 @@ User-facing bot changes are recorded here in reverse chronological order. Dates 
 ## 2026-11-18
 
 - Token and cost ranking requests now return both leaderboards for the same Beijing-time period. The default is today; explicit dates, ranges, and all retained history remain available.
+- Repeating a usage question in a new message runs a fresh query. Duplicate delivery of the same message is still ignored.
 
 ## 2026-11-17
 
