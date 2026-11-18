@@ -2,6 +2,10 @@
 
 User-facing bot changes are recorded here in reverse chronological order. Dates use `YYYY-MM-DD`.
 
+## 2026-11-18
+
+- Token and cost ranking requests now return both leaderboards for the same Beijing-time period. The default is today; explicit dates, ranges, and all retained history remain available.
+
 ## 2026-11-17
 
 - Split a previously shared member-usage binding into independent Key statistics, added a public member alias, and removed the old shared ranking label. Personal queries and historical ranges use each member's newly bound Key only.

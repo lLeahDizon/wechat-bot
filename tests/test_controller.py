@@ -133,22 +133,23 @@ class ExpandedPolicyTests(unittest.TestCase):
         plain,_=request_for('比较群成员之间最近30天Token用量',{'usage_target':'gentle'},self.engine.config['usage_public_aliases'])
         self.assertNotIn('commentary',plain)
 
-    def test_member_ranking_selects_token_usd_or_both_without_model_calls(self):
-        cases=[('Token排行',['tokens']),('美元额度消耗排行',['usd']),
-               ('Token和美元额度一起排行',['tokens','usd'])]
-        for text,metrics in cases:
+    def test_member_ranking_returns_both_metrics_without_model_calls(self):
+        for text in ('Token排行','费用排行','美元额度消耗排行','Token和美元额度一起排行','成员用量排行'):
             with self.subTest(text=text):
                 result=self.engine.prepare(self.event(text))
-                self.assertEqual(result.usage_request,{'op':'member_usage','target':'all','metrics':metrics,
+                self.assertEqual(result.usage_request,{'op':'member_usage','target':'all','metrics':['tokens','usd'],
                     'period':'today','window_minutes':15,'rank':True})
                 self.assertIsNone(result.model_input)
-    def test_ambiguous_metric_is_clarified_and_cost_accepts_any_window(self):
-        result=self.engine.prepare(self.event('成员用量排行'))
-        self.assertIsNone(result.usage_request);self.assertIn('Token、美元额度',result.reply)
+    def test_rankings_share_both_metrics_for_short_and_long_ranges(self):
         result=self.engine.prepare(self.event('美元额度最近1小时排行'))
-        self.assertEqual(result.usage_request['metrics'],['usd'])
+        self.assertEqual(result.usage_request['metrics'],['tokens','usd'])
         self.assertEqual(result.usage_request['period'],'window')
         self.assertEqual(result.usage_request['window_minutes'],60)
+        for text,period in [('2025-01-01至2026-11-17费用排行','range'),
+                            ('2025-01-01 Token排行','range'),('全部历史费用排行','all')]:
+            result=self.engine.prepare(self.event(text))
+            self.assertEqual(result.usage_request['period'],period)
+            self.assertEqual(result.usage_request['metrics'],['tokens','usd'])
     def test_bound_sender_can_query_own_usage_without_model_calls(self):
         result=self.engine.prepare(self.event('我的token用量','q-stable'))
         self.assertEqual(result.usage_request['target'],'gentle')
@@ -290,6 +291,9 @@ class UsageTests(unittest.TestCase):
         value=evidence('member_usage',{'period':'today','rank':True,'token_items':[],'usd_items':[]})
         text=format_member_usage(value)
         self.assertIn('暂无已记录用量',text);self.assertNotIn('联系管理员',text)
+        self.assertIn('Token用量排行',text)
+        self.assertIn('美元额度消耗排行',text)
+        self.assertIn('暂无实际扣费记录',text)
 
 
 if __name__=='__main__':unittest.main()

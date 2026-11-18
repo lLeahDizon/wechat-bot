@@ -163,9 +163,7 @@ def request_for(text,profile,aliases=None):
     token_requested=bool(TOKEN_RE.search(text))
     cost_requested=bool(COST_RE.search(text))
     both_requested=bool(re.search(r'一起|同时|两种|都查|全部指标',text))
-    if ranking and not (token_requested or cost_requested or both_requested):
-        return None,'请说明排行看 Token、美元额度，还是两种都看。'
-    if both_requested:token_requested=cost_requested=True
+    if ranking or both_requested:token_requested=cost_requested=True
     if not token_requested and not cost_requested:token_requested=True
 
     try:period,window,range_start,range_end,error=_period(text)
@@ -278,29 +276,29 @@ def format_member_usage(result,tone='default',unit='auto',names=None,commentary=
     token_items=data.get('token_items',[]);usd_items=data.get('usd_items',[])
     if not isinstance(token_items,list) or not isinstance(usd_items,list):
         return '统计结果格式异常，本次不提供数字。'
-    if not token_items and not usd_items:
-        if ranking:return period+'暂无已记录用量。'
+    if not ranking and not token_items and not usd_items:
         return '当前没有可核对的授权用量数据，请联系管理员确认成员关联。'
     tone_lead='查到啦，' if tone=='gentle' else '按实际计量记录看：' if tone=='sharp' else ''
     lines=[]
     if ranking:
+        lines.append(tone_lead+period+'（仅统计已绑定成员，各取前10）')
+        lines.append('Token用量排行：')
         if token_items:
-            lines.append(tone_lead+period+' Token用量排行（仅统计已绑定成员，前10）：')
             try:
                 rendered=[_token_line(item,unit,True,names,i) for i,item in enumerate(token_items[:10],1)]
                 if any(line.startswith('排行榜成员显示映射不完整') for line in rendered):return rendered[0]
                 lines.extend(rendered)
             except (TypeError,ValueError):return 'Token统计格式异常，本次不提供未经核实的数字。'
-        if usd_items:
-            lines.append((tone_lead if not token_items else '')+period+' Sub2API美元额度消耗排行（仅统计已绑定成员，前10）：')
-            for index,item in enumerate(usd_items[:10],1):
-                if not item.get('binding_available'):continue
-                subject=item.get('subject');label=(names or {}).get(subject,NAMES.get(subject))
-                if not isinstance(label,str) or not label:return '排行榜成员显示映射不完整，本次不显示个人数据。'
-                try:amount=_amount(item.get('usd_amount'))
-                except (TypeError,ValueError):return '美元额度统计格式异常，本次不提供未经核实的数字。'
-                lines.append(f'{index}. {label} {amount}')
-        if not lines:return period+'暂时没有已记录的用量。'
+        else:lines.append('暂无已记录用量。')
+        lines.append('Sub2API美元额度消耗排行：')
+        fee_rows=[item for item in usd_items[:10] if item.get('binding_available')]
+        if not fee_rows:lines.append('暂无实际扣费记录。')
+        for index,item in enumerate(fee_rows,1):
+            subject=item.get('subject');label=(names or {}).get(subject,NAMES.get(subject))
+            if not isinstance(label,str) or not label:return '排行榜成员显示映射不完整，本次不显示个人数据。'
+            try:amount=_amount(item.get('usd_amount'))
+            except (TypeError,ValueError):return '美元额度统计格式异常，本次不提供未经核实的数字。'
+            lines.append(f'{index}. {label} {amount}')
     else:
         lines.append(tone_lead+period+'：')
         if token_items:
