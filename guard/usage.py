@@ -216,7 +216,7 @@ def _token_line(item,unit,include_name=False,names=None,rank=None):
         subject=item.get('subject');label=(names or {}).get(subject,NAMES.get(subject))
         if not isinstance(label,str) or not label:return '排行榜成员显示映射不完整，本次不显示个人数据。'
         label+='：'
-    return prefix+label+f'合计 {format_token_quantity(item["total_tokens"])}（输入 {format_token_quantity(item["input_tokens"])}，输出 {format_token_quantity(item["output_tokens"])}）。'
+    return prefix+label+f'合计 {format_token_quantity(item["total_tokens"])}。'
 
 
 def _usage_comment(token_items,usd_items,names=None):
@@ -304,7 +304,6 @@ def format_member_usage(result,tone='default',unit='auto',names=None,commentary=
         if token_items:
             try:lines.extend(_token_line(item,unit,len(token_items)>1,names) for item in token_items)
             except (TypeError,ValueError):return 'Token统计格式异常，本次不提供未经核实的数字。'
-            lines.append('缓存读取与写入已计入输入；推理Token已计入输出。')
         if usd_items:
             for item in usd_items:
                 if not item.get('binding_available'):
@@ -334,7 +333,6 @@ def format_usage(result,tone='default',unit='auto'):
         try:
             content=_token_line(item,unit,False)
             lines.append(label+content)
-            lines.append(f'其中缓存读取 {format_token_quantity(item["cache_read_tokens"])}、缓存写入 {format_token_quantity(item["cache_write_tokens"])}，已含在输入合计。')
         except (TypeError,ValueError):lines.append(label+'统计格式异常，本次不提供未经核实的数字。')
     at=datetime.datetime.fromtimestamp(result['captured_at'],datetime.timezone(datetime.timedelta(hours=8))).strftime('%m-%d %H:%M:%S')
     lines.append('统计截至'+at+'；计量记录不等于成功请求次数。')
