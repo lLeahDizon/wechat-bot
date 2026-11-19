@@ -223,6 +223,7 @@ class UsageTests(unittest.TestCase):
             'usd_items':[{'subject':'gentle','binding_available':True,'usd_amount':'0.00001234'}]})
         text=format_member_usage(value,names={'gentle':'example_person_b'})
         self.assertIn('1. example_person_b：合计 100 Token',text)
+        self.assertNotIn('输入',text);self.assertNotIn('输出',text);self.assertNotIn('缓存',text)
         self.assertIn('1. example_person_b 12.34 µUSD',text)
         self.assertNotIn('$0.00',text)
         for value in ['gentle','member_','example_key_label','aa','api_key_id','key_id']:
@@ -234,6 +235,7 @@ class UsageTests(unittest.TestCase):
             'usd_items':[{'subject':'gentle','binding_available':True,'usd_amount':'1.23000000'}]})
         text=format_member_usage(value,unit='tokens',names={'gentle':'example_person_b'})
         self.assertIn('合计 100 Token',text);self.assertIn('$1.23',text)
+        self.assertNotIn('输入',text);self.assertNotIn('输出',text);self.assertNotIn('缓存',text)
         self.assertIn('使用记录的实际扣费字段',text)
 
     def test_statistics_auto_scale_and_round_only_the_display(self):
@@ -243,7 +245,8 @@ class UsageTests(unittest.TestCase):
         result=evidence('member_usage',{'period':'today','rank':False,'token_items':[token],
             'usd_items':[{'subject':'gentle','binding_available':True,'usd_amount':'0.00001234'}]})
         text=format_member_usage(result,names={'gentle':'example_person_b'})
-        self.assertIn('合计 1.23 M Token',text);self.assertIn('输入 1.00 M Token，输出 234.57 K Token',text)
+        self.assertIn('合计 1.23 M Token',text)
+        self.assertNotIn('输入',text);self.assertNotIn('输出',text);self.assertNotIn('缓存',text)
         self.assertIn('12.34 µUSD',text)
 
     def test_money_keeps_usd_readable_and_never_rounds_a_positive_fee_to_zero(self):

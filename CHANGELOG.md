@@ -2,6 +2,10 @@
 
 User-facing bot changes are recorded here in reverse chronological order. Dates use `YYYY-MM-DD`.
 
+## 2026-11-19
+
+- Simplified Token usage replies to show only each member's total, while preserving automatic units, ranking context, and separate fee rankings.
+
 ## 2026-11-18
 
 - Token and cost ranking requests now return both leaderboards for the same Beijing-time period. The default is today; explicit dates, ranges, and all retained history remain available.

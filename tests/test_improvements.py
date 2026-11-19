@@ -176,8 +176,8 @@ class ImprovementTests(unittest.TestCase):
         item={'subject':'gentle','binding_available':True,'ordinary_input_tokens':1234567890,'cache_read_tokens':0,'cache_write_tokens':0,'input_tokens':1234567890,'output_tokens':1,'total_tokens':1234567891}
         result=evidence('token_usage',{'items':[item],'period':'today'})
         text=format_usage(result,unit='auto')
-        self.assertIn('输入 1.23 B Token',text);self.assertIn('输出 1 Token',text)
         self.assertIn('合计 1.23 B Token',text);self.assertNotIn('0.00000',text)
+        self.assertNotIn('输入',text);self.assertNotIn('输出',text);self.assertNotIn('缓存',text)
         self.propose('建议Token和费用统计自动换算单位并最多两位小数',
             {'kind':'reply_style','style':{'token_unit':'auto'}})
         d=self.engine.prepare(self.event('查看example_person_b今天的Token用量'))
