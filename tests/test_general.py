@@ -198,6 +198,7 @@ class PublicWebTests(unittest.TestCase):
             request=opener.open.call_args[0][0];payload=json.loads(request.data)
             self.assertEqual(request.full_url,'https://api.apiroute.asia/v1/alpha/search')
             self.assertEqual(payload['input'],[]);self.assertEqual(payload['model'],'gpt-6.1-sol')
+            self.assertEqual(payload['reasoning'],{'effort':'high'})
             self.assertEqual(payload['commands']['search_query'],[{'q':'pathlib documentation'}])
             self.assertNotIn('never-forward-this',json.dumps(records))
     def test_search_cache_reuses_public_results_without_storing_query(self):

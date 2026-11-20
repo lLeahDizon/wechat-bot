@@ -56,7 +56,7 @@ _RELATED = re.compile(
     r"cpu|内存|磁盘|负载|健康|诊断|监控|告警|caddy|postgres|redis|队列|并发|延迟|耗时|"
     r"ttfb|http|日志|服务|容器|docker|网络|丢包|tls|证书|上游|请求|缓存|tokens?", re.I
 )
-_DYNAMIC = re.compile(r"查询|检查|诊断|监控|告警|状态|cpu|内存|磁盘|负载|redis|postgres|并发|延迟|耗时|用量|tokens?|日志|上游|映射|网络|tls|连接|reconnect|超时",re.I)
+_DYNAMIC = re.compile(r"查询|检查|诊断|监控|告警|状态|cpu|内存|磁盘|负载|redis|postgres|并发|延迟|耗时|用量|tokens?|日志|上游|映射|网络|tls|连接|reconnect|超时|防火墙|SSH|端口|漏洞|入侵|备份|服务器.{0,8}风险",re.I)
 _CORRECTION = re.compile(r"补充|纠正|不是|更正|新的|新报错|变了|仍然|还是|不对|但是|另外|现在|刚刚|重试后")
 _OTHER_USAGE = re.compile(r'(?:其他|别人|所有|全体|每个).{0,8}用量')
 _PRIVATE_DATA = re.compile(
@@ -66,7 +66,7 @@ _PRIVATE_DATA = re.compile(
     r'(?:其他|别人|所有|全体|每个).{0,8}(?:账单|余额|密钥|账号)|'
     r'(?:打印|输出|读取|显示|提供|发我).{0,10}(?:环境变量|原始日志)|(?:配置文件|日志).{0,6}(?:全文|完整|原文|全部)|'
     r'忽略.{0,12}(?:规则|指令|限制)|<\s*(?:system|developer)\s*>',re.I)
-_SERVICE_TOPIC=re.compile(r'sub\s*2\s*api|本服务|这个服务|本服务器|当前服务器|这台服务器|服务器|主机|caddy|postgres|redis|'
+_SERVICE_TOPIC=re.compile(r'sub\s*2\s*api|本服务|这个服务|本服务器|当前服务器|这台服务器|服务器|主机|caddy|postgres|redis|防火墙|SSH登录|端口暴露|'
     r'查(?:询|一下)?.{0,6}(?:cpu|内存|磁盘|负载|容器|日志|上游|并发|延迟|用量)|codex.{0,10}(?:报错|断流|重连|reconnect)|我的.{0,5}(?:key|token|用量)',re.I)
 _SERVER_WRITE=re.compile(r'(?:重启|删库|删除.{0,8}(?:账号|文件|目录|数据)|删掉|写入|修改配置|刷新token|清除错误|停止服务|执行.{0,4}(?:shell|sql|脚本))',re.I)
 _LOL_FOLLOW=re.compile(r'英雄|对线|出装|符文|团战|这个位置|这场|这两队|BP|^(?:那|继续|详细一点|为什么|怎么说|具体呢)',re.I)

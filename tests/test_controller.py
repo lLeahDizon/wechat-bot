@@ -24,26 +24,40 @@ class MemoryBudget:
 
 
 class ControllerTests(unittest.TestCase):
-    def test_queries_are_chosen_after_baseline_and_second_call_is_final(self):
+    def test_queries_are_chosen_after_baseline_and_followup_can_finish(self):
         calls=[];budget=MemoryBudget()
         def model(data,*args):
             calls.append(data)
-            if data['phase']=='plan':return {'scope':'service','queries':[{'op':'traffic'},{'op':'events'}]}, {'input_tokens':100,'output_tokens':20}
+            if len(calls)==1:return {'scope':'service','queries':[{'op':'traffic'},{'op':'events'}]}, {'input_tokens':100,'output_tokens':20}
             return {'scope':'service','answer':'按已完成HTTP请求统计。','refs':[data['evidence'][-1]['id']]}, {'input_tokens':200,'output_tokens':30}
         result,usage,proof=diagnose({'question':'查延迟'},Path('/not-read'),'unused',budget,model)
         self.assertEqual(len(calls),2);self.assertEqual(budget.count,3);self.assertEqual(len(usage),2)
         self.assertEqual(result['refs'],[proof[-1]['id']])
-        self.assertNotIn('allowed_queries',calls[-1])
+        self.assertIn('allowed_queries',calls[-1])
         self.assertIn('example_person_a',calls[0]['usage_targets']['flower'])
         self.assertIn('example_person_b',calls[-1]['usage_targets']['gentle'])
-    def test_arbitrary_commands_are_rejected_and_plans_never_exceed_five_queries(self):
+    def test_arbitrary_commands_and_repeated_plans_are_not_executed(self):
         budget=MemoryBudget();calls=[]
         def model(data,*args):
             calls.append(data)
             if data['phase']=='plan':return {'scope':'service','queries':[{'op':'services','command':'restart'}]+[{'op':'resources'}]*20},{}
             return {'scope':'service','answer':'查询结束','refs':[data['evidence'][0]['id']]},{}
         diagnose({},Path('/not-read'),'unused',budget,model)
-        self.assertEqual(budget.count,4);self.assertEqual(calls[-1]['query_limits']['rejected_plans'],1)
+        self.assertEqual(budget.count,2);self.assertEqual(calls[-1]['query_limits']['rejected_plans'],2)
+
+    def test_adaptive_chase_is_bounded_by_ten_queries_and_four_model_calls(self):
+        budget=MemoryBudget();calls=[]
+        def model(data,*args):
+            calls.append(data)
+            if data['phase']=='answer':return {'scope':'service','answer':'证据不足','refs':[]},{}
+            index=len(calls)
+            return {'scope':'service','queries':[{'op':name} for name in
+                (['host','resources','services'] if index==1 else
+                 ['ssh','firewall','exposure'] if index==2 else ['versions','backups','history'])]},{}
+        result,usages,proof=diagnose({},None,None,budget,model)
+        self.assertEqual(budget.count,10);self.assertEqual(len(calls),4)
+        self.assertEqual(calls[-1]['phase'],'answer');self.assertEqual(len(usages),4)
+        self.assertEqual(len(proof),10);self.assertEqual(result['answer'],'证据不足')
     def test_unavailable_query_service_uses_no_model_call(self):
         def model(*args):self.fail('No model should be called without diagnostics')
         result,usage,_=diagnose({},None,None,MemoryBudget(True),model)

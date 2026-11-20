@@ -6,7 +6,8 @@ import math
 import re
 import time
 
-OPS = {'overview','services','resources','host','database','traffic','events','configuration','connectivity','token_usage','member_usage','account_quota'}
+OPS = {'overview','services','resources','host','database','traffic','events','configuration','connectivity','token_usage','member_usage','account_quota','exposure','firewall','ssh','versions','backups','history'}
+RANGE_OPS = {'traffic','events','ssh','history'}
 WINDOWS = {5,15,60,1440}
 TARGETS = {'flower','gentle','both'}
 SUBJECT_RE = re.compile(r'^(?:flower|gentle|member_[a-f0-9]{16})$')
@@ -22,12 +23,19 @@ def validate(value):
     if not isinstance(value,dict) or value.get('op') not in OPS:
         raise Rejected('operation_not_allowed')
     allowed={'op','window_minutes'}
+    if value['op'] in RANGE_OPS:allowed|={'range_start_epoch','range_end_epoch'}
     if value['op']=='token_usage':allowed|={'target','period'}
     if value['op']=='member_usage':allowed|={'target','metrics','period','rank','range_start_epoch','range_end_epoch','commentary'}
     if set(value)-allowed:raise Rejected('unexpected_parameter')
     window=value.get('window_minutes',15)
     if type(window) is not int or window not in WINDOWS:raise Rejected('window_not_allowed')
     result={'op':value['op'],'window_minutes':window}
+    if value['op'] in RANGE_OPS and ('range_start_epoch' in value or 'range_end_epoch' in value):
+        start=value.get('range_start_epoch');end=value.get('range_end_epoch')
+        if type(start) is not int or type(end) is not int or not 0<=start<end<=MAX_EPOCH:
+            raise Rejected('range_invalid')
+        if end>time.time()+60:raise Rejected('range_in_future')
+        result.update(range_start_epoch=start,range_end_epoch=end)
     if value['op']=='token_usage':
         if value.get('target') not in TARGETS:raise Rejected('usage_target_not_allowed')
         period=value.get('period','today')

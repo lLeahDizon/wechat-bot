@@ -2,6 +2,13 @@
 
 User-facing bot changes are recorded here in reverse chronological order. Dates use `YYYY-MM-DD`.
 
+## 2026-11-20
+
+- Added passive, aggregated risk queries for listener exposure, UFW, SSH authentication events, declared service versions and task backup metadata, with explicit evidence limitations.
+- Added bounded historical host metric queries and explicit time ranges for request/event/SSH evidence; raw logs and infrastructure identities stay private.
+- Expanded diagnostic planning to ten queries and four model calls within an isolated 60-second deadline, preserving all other workflow budgets and the group mention/read-only boundary.
+- Raised shared question-answering, research, suggestion review, weekly summaries and public search reasoning to high, subject to effective server model mapping.
+
 ## 2026-11-19
 
 - Simplified Token usage replies to show only each member's total, while preserving automatic units, ranking context, and separate fee rankings.

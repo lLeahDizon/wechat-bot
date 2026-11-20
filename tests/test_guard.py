@@ -212,7 +212,7 @@ class TransportTests(unittest.TestCase):
     def test_fixed_model_effort_no_tools_store_or_server_context(self):
         value = payload({'question':'api如何配置'})
         self.assertEqual(value['model'], 'gpt-6.1-sol')
-        self.assertEqual(value['reasoning'], {'effort':'medium'})
+        self.assertEqual(value['reasoning'], {'effort':'high'})
         self.assertFalse(value['store'])
         self.assertFalse(value['stream'])
         self.assertEqual(value['tools'], [])
