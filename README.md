@@ -19,6 +19,51 @@ The Native WeChat adapter under `vendor/astrbot_plugin_wechat_native` is vendore
 
 This private GitHub repository is the durable source copy. Server-side code fixes must be brought back here, verified, committed, and pushed; planned changes should be developed from this repository. See `AGENTS.md`. Record user-facing changes in `CHANGELOG.md`.
 
+## Passive risk diagnostics
+
+True mentions may request passive host/Sub2API risk checks. Fixed readers expose anonymous
+listener counts, UFW policy/rule counts, bounded SSH authentication event counts, declared
+container version tags, task-owned archive metadata, and retained host metric summaries.
+No model-supplied shell, SQL, path or network target is accepted. Raw log lines, addresses,
+ports, account identifiers, registry names and archive names do not leave the readers.
+An SSH failure is a signal, not proof of intrusion; local listeners do not prove public
+reachability, UFW does not cover cloud security groups, version tags do not verify binaries
+or vulnerability applicability, and archives do not prove backup coverage or recoverability.
+There is no active scan or additional automatic risk alert.
+
+Diagnostics default to 15 minutes. `traffic`, `events`, `ssh`, and `history` accept integer
+`range_start_epoch`/`range_end_epoch` for retained historical data. Current gateway logs
+are limited to an 8 MiB tail, SSH journal output to 5,000 rows/1 MiB, and metric history
+to 1,000 samples. Coverage, truncation and unavailable data remain explicit. Database
+reads retain the read-only role, transaction and statement timeout; time ranges do not
+grant access to additional tables. Instantaneous host/service readers cannot reconstruct
+past state. Existing member usage date ranges and accounting remain unchanged.
+
+The production diagnostic entry uses a disposable worker with a hard 60-second parent
+timeout, at most ten fixed queries and four model calls, including follow-up planning.
+Other workflow budgets stay independent. Shared Responses requests and public search
+requests use `gpt-6.1-sol` with `high` reasoning; server-side mapping still selects the
+effective upstream model. No paid synthetic probe is required for deployment: payload
+contracts and existing metered high-effort records establish compatibility evidence;
+actual group acceptance is recorded separately. A killed in-flight request may still be
+charged upstream, and its final usage is unavailable to this worker.
+
+Implementation checkpoint `botReadonlyRisk20261120`: source delivery target is `main`
+in the original `work/wechat-bot` checkout; isolated work is
+`feature/botReadonlyRiskSession1_20261120`, based on `720971a`.
+Checklist: (1) baseline/isolation complete; (2) fixed readers and limits complete;
+(3) model/controller and compatibility verification complete; (4) verification and
+review complete, source push pending; (5) deployment and runtime acceptance pending.
+Current repository suite: 401 passed. The server's older suite ran 339 tests after
+the patch versus 329 from the backup, with the same five pre-existing failures in
+legacy ranking/unit expectations and no added failures. This comparison does not
+turn those stale server tests into passing tests. Ruff correctness checks and the
+task diff's sensitive-information scan passed; browser E2E is not applicable.
+Source commit/push authorization: `automatic_source_policy`, with `main` as the
+explicit user-selected delivery target. Deployment verification and true-mention
+acceptance are separate from source delivery.
+Preserve Native login/cursor/history/bindings and uncertain-send state when loading changes.
+
 ## Investment failure diagnostics
 
 Investment model failures retain only a normalized error code and timestamp in the existing delivery metadata for up to seven days. From the deployed source directory, operators can run `python3 admin/model_failures.py --limit 20` to read them. The output omits message text, sender IDs, and credentials.

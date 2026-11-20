@@ -9,7 +9,7 @@ from astrbot.api.star import Context, Star
 
 from diagnostics.client import QueryBudget
 
-from .guard.controller import diagnose
+from .guard.controller import run_isolated as diagnose
 from .guard.core import FAILED, Engine, Incoming, digest, mask_labels, safe_failure_code, unsafe
 from .guard.general import answer as general_answer
 from .guard.general import review_question

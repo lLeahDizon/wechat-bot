@@ -32,10 +32,10 @@ def percentile(values,percent):
     return round(values[low]+(values[high]-values[low])*(position-low),2)
 
 
-def gateway_logs(path,minutes,now=None,byte_limit=8*1024*1024):
+def gateway_logs(path,minutes,now=None,byte_limit=8*1024*1024,start=None):
     """Read bounded tail, discard identities/bodies before returning any data."""
     now=time.time() if now is None else now
-    start=now-minutes*60
+    start=now-minutes*60 if start is None else start
     with path.open('rb') as handle:
         size=os.fstat(handle.fileno()).st_size
         offset=max(0,size-byte_limit);handle.seek(offset);raw=handle.read(byte_limit)
@@ -62,7 +62,8 @@ def gateway_logs(path,minutes,now=None,byte_limit=8*1024*1024):
         'observed_completed_requests':count,'http_5xx':errors,'http_4xx':client_errors,
         'http_5xx_rate':round(errors/count,6) if count and complete else None,
         'completed_http_duration_p95_ms':percentile(durations,.95) if complete else None,
-        'limitations':'does_not_cover_http_200_stream_errors_or_ws_turns'}
+        'requested_start_epoch':start,'requested_end_epoch':now,
+        'limitations':'bounded_current_log_not_rotated_logs_or_http_200_stream_errors_or_ws_turns'}
 
 
 class Sources:
@@ -164,27 +165,54 @@ class Sources:
                 return {'service':'healthy' if response.status==200 and data.get('status')=='ok' else 'degraded'}
         except (OSError,ValueError):return {'service':'unavailable'}
 
-    def traffic(self,window):
+    def traffic(self,window,start=None,end=None):
         result={}
-        try:result['gateway']=gateway_logs(Path('/var/log/caddy/sub2api-access.log'),window)
+        try:result['gateway']=gateway_logs(Path('/var/log/caddy/sub2api-access.log'),window,now=end,start=start)
         except (OSError,ValueError):result['gateway']={'metric':'gateway_http_5xx','coverage_complete':False,'http_5xx_rate':None}
         try:
             result['metered']=self.sql("SELECT json_build_object('metered_records',count(*),"
                 "'metered_duration_p50_ms',percentile_cont(0.5) WITHIN GROUP(ORDER BY duration_ms) FILTER(WHERE duration_ms>=0),"
                 "'metered_duration_p95_ms',percentile_cont(0.95) WITHIN GROUP(ORDER BY duration_ms) FILTER(WHERE duration_ms>=0),"
                 "'metered_ttfb_p95_ms',percentile_cont(0.95) WITHIN GROUP(ORDER BY first_token_ms) FILTER(WHERE first_token_ms>=0)) "
-                f"FROM bot_diagnostics.metered WHERE created_at>=now()-interval '{window} minutes'")
+                'FROM bot_diagnostics.metered WHERE '+self.time_filter(window,start,end))
         except (OSError,ValueError,subprocess.TimeoutExpired):result['metered']={'state':'unavailable'}
         return result
 
-    def events(self,window):
+    def time_filter(self,window,start=None,end=None):
+        if start is not None and end is not None:
+            return f'created_at>=to_timestamp({int(start)}) AND created_at<to_timestamp({int(end)})'
+        return f"created_at>=now()-interval '{window} minutes'"
+
+    def events(self,window,start=None,end=None):
         return self.sql("SELECT json_build_object('final_failure_event_rows',count(*) FILTER(WHERE is_failure),"
             "'logged_failure_requests_with_id',count(DISTINCT request_identity) FILTER(WHERE is_failure),"
             "'failure_events_missing_identity',count(*) FILTER(WHERE is_failure AND request_identity IS NULL),"
             "'recovered_upstream_error_event_rows',count(*) FILTER(WHERE recovered),"
             "'recorded_upstream_context_entries',coalesce(sum(context_entries),0),"
             "'limitations','events_are_not_unique_end_to_end_requests') "
-            f"FROM bot_diagnostics.error_events WHERE created_at>=now()-interval '{window} minutes'")
+            'FROM bot_diagnostics.error_events WHERE '+self.time_filter(window,start,end))
+
+    def history(self,start,end):
+        import sqlite3
+        path=self.root/'diagnostics/monitor.sqlite'
+        db=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True,timeout=1)
+        try:
+            deadline=time.monotonic()+2
+            db.set_progress_handler(lambda: int(time.monotonic()>deadline),1000)
+            rows=db.execute('SELECT at,data FROM samples WHERE at>=? AND at<? ORDER BY at LIMIT 1001',(start,end)).fetchall()
+        finally:db.close()
+        truncated=len(rows)>1000;rows=rows[:1000]
+        metrics={name:[] for name in ('cpu_percent','memory_available_percent','disk_available_percent')}
+        for _,raw in rows:
+            data=json.loads(raw).get('resources',{})
+            for name,values in metrics.items():
+                value=data.get(name)
+                if type(value) in {int,float} and math.isfinite(value):values.append(value)
+        return {'sample_count':len(rows),'truncated':truncated,'sample_limit':1000,
+            'first_sample_epoch':rows[0][0] if rows else None,'last_sample_epoch':rows[-1][0] if rows else None,
+            'requested_start_epoch':start,'requested_end_epoch':end,'coverage':'retained_samples_only_not_continuous_evidence',
+            'metrics':{name:{'min':min(values) if values else None,'max':max(values) if values else None,
+                'mean':round(sum(values)/len(values),2) if values else None} for name,values in metrics.items()}}
 
     def configuration(self):
         data=self.sql("SELECT json_build_object('accounts',(SELECT row_to_json(a) FROM bot_diagnostics.account_summary a),"
@@ -290,8 +318,15 @@ print(json.dumps(result))
         from .protocol import validate
         request=validate(request)
         op=request['op'];window=request['window_minutes']
+        end=request.get('range_end_epoch',int(time.time()));start=request.get('range_start_epoch',end-window*60)
         if op in {'overview','services','resources','host','database','configuration','connectivity'}:return getattr(self,op)()
-        if op in {'traffic','events'}:return getattr(self,op)(window)
+        if op in {'traffic','events'}:return getattr(self,op)(window,start,end)
+        if op=='history':return self.history(start,end)
+        if op in {'exposure','firewall','ssh','versions','backups'}:
+            from . import security
+            if op=='ssh':return security.ssh_events(start,end)
+            if op=='backups':return security.backups(self.root)
+            return getattr(security,op)()
         if op=='account_quota':return self.account_quota()
         if op=='token_usage':return self.token_usage(request['target'],request['period'],window)
         if op=='member_usage':return self.member_usage(request['target'],request['metrics'],request['period'],window,

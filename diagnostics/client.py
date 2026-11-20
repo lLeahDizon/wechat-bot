@@ -11,22 +11,25 @@ SOCKET=Path('/run/bot-query/query.sock')
 
 
 class QueryBudget:
-    def __init__(self,path=SOCKET,clock=time.monotonic):
+    def __init__(self,path=SOCKET,clock=time.monotonic,max_operations=5,max_seconds=20,deadline=None):
         self.path,self.clock=path,clock
+        self.max_operations,self.max_seconds,self.deadline=max_operations,max_seconds,deadline
         self.spent=0.0
         self.count=0
         self.results=[]
 
     def query(self,request):
         request=validate(request)
-        if self.count>=5 or self.spent>=20:
+        remaining=self.max_seconds-self.spent
+        if self.deadline is not None:remaining=min(remaining,self.deadline-self.clock())
+        if self.count>=self.max_operations or remaining<=0:
             return evidence(request['op'],{'reason':'query_budget_exhausted'},'unavailable')
         self.count+=1
         started=self.clock()
-        operation_deadline=started+min(5,20-self.spent)
+        operation_deadline=started+min(5,remaining)
         try:
             with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
-                connection.settimeout(max(.01,min(5,20-self.spent)))
+                connection.settimeout(max(.01,min(5,remaining)))
                 connection.connect(str(self.path))
                 connection.sendall(json.dumps(request,separators=(',',':')).encode()+b'\n')
                 raw=bytearray()

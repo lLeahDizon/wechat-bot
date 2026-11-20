@@ -253,7 +253,7 @@ class PublicResearch:
         if self.key_file is None:raise ValueError('search_key_unavailable')
         key=self.key_file.read_text().strip()
         if not key or any(c.isspace() for c in key):raise ValueError('search_key_invalid')
-        payload={'id':'group-search-'+uuid.uuid4().hex,'model':'gpt-6.1-sol','reasoning':{'effort':'medium'},'input':[],
+        payload={'id':'group-search-'+uuid.uuid4().hex,'model':'gpt-6.1-sol','reasoning':{'effort':'high'},'input':[],
             'commands':{'search_query':[{'q':query_text(q)} for q in queries[:4]]},
             'settings':{'allowed_callers':['direct'],'external_web_access':True},'max_output_tokens':2000}
         class NoRedirect(urllib.request.HTTPRedirectHandler):
