@@ -27,6 +27,17 @@ pending warning; a 2 GiB sample immediately opens or upgrades a critical alert.
 Two valid below-threshold samples are still needed for recovery. The independent
 maintenance collector retains its immediate 2 GiB and low-disk stop protection.
 
+On 2026-11-20 this change was verified with 406 local tests, including isolated
+spikes, consecutive warnings, missing samples, critical escalation and existing
+maintenance thresholds. Correctness lint, diff review and a task-diff secret
+scan passed; browser E2E is not applicable. Working commit `dc3449c` was merged
+into the user-selected `main` source as `c194a18` and pushed under
+`automatic_source_policy`. The verified deployment restarted only the query
+service once; a server-side fixture reproduced the threshold cases without model
+calls or group messages. Runtime monitor state, configuration, other containers
+and Native login were preserved. Receipt and rollback evidence remain on the
+server outside Git; future naturally occurring spikes remain observational.
+
 ## Passive risk diagnostics
 
 True mentions may request passive host/Sub2API risk checks. Fixed readers expose anonymous
