@@ -30,6 +30,9 @@ An SSH failure is a signal, not proof of intrusion; local listeners do not prove
 reachability, UFW does not cover cloud security groups, version tags do not verify binaries
 or vulnerability applicability, and archives do not prove backup coverage or recoverability.
 There is no active scan or additional automatic risk alert.
+When the protected query service cannot run UFW status, the reader aggregates fixed
+UFW configuration files instead. It reports partial coverage and an unknown live
+kernel state, without weakening the service's filesystem protection or creating locks.
 
 Diagnostics default to 15 minutes. `traffic`, `events`, `ssh`, and `history` accept integer
 `range_start_epoch`/`range_end_epoch` for retained historical data. Current gateway logs
@@ -54,7 +57,7 @@ in the original `work/wechat-bot` checkout; isolated work is
 Checklist: (1) baseline/isolation complete; (2) fixed readers and limits complete;
 (3) model/controller and compatibility verification complete; (4) verification and
 review complete, source push pending; (5) deployment and runtime acceptance pending.
-Current repository suite: 401 passed. The server's older suite ran 339 tests after
+Current repository suite: 402 passed. The server's older suite ran 340 tests after
 the patch versus 329 from the backup, with the same five pre-existing failures in
 legacy ranking/unit expectations and no added failures. This comparison does not
 turn those stale server tests into passing tests. Ruff correctness checks and the
