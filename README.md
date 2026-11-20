@@ -73,8 +73,14 @@ the cursor did not regress and uncertain receipts, bindings, private configurati
 and protected service start times were preserved. The query service was restarted
 twice (including the verified UFW fallback correction), AstrBot once, Native never.
 The operator receipt is `admin-evidence/readonly-risk-20261120.json` on the server;
-it and rollback archives are excluded from Git. True-mention group acceptance and
-the effective effort on a new real upstream request are pending user testing.
+it and rollback archives are excluded from Git. On 2026-11-20, the user confirmed
+both the server-risk question and the public-web question received correct replies.
+The two most recent group delivery records, at 17:06 and 17:07 Beijing, are
+`replied`, with Native send receipts `accepted`; no message text was used to match
+them to the two questions. Four bot-key records in the same test period show
+requested and upstream `gpt-6.1-sol` with `high` effort; one other record has a
+null effort and its effective effort remains unverified. No message bodies or
+member identities are retained in this record.
 Preserve Native login/cursor/history/bindings and uncertain-send state when loading changes.
 
 ## Investment failure diagnostics
