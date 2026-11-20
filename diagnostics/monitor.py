@@ -73,7 +73,9 @@ class Monitor:
         self.rule('memory',below('memory_available_percent',15),duration=300)
         disk=resources.get('disk_available_percent');size=resources.get('bot_data_gib')
         self.rule('disk',below('disk_available_percent',25),severity=2 if isinstance(disk,(int,float)) and disk<20 else 1)
-        self.rule('bot_data',size>=1 if isinstance(size,(int,float)) else None,severity=2 if isinstance(size,(int,float)) and size>=2 else 1)
+        critical_storage=isinstance(size,(int,float)) and size>=2
+        self.rule('bot_data',size>=1 if isinstance(size,(int,float)) else None,
+                  samples=1 if critical_storage else 2,severity=2 if critical_storage else 1)
         metric=sample.get('traffic',{}).get('gateway',{})
         rate=metric.get('http_5xx_rate');valid=metric.get('coverage_complete') and metric.get('observed_completed_requests',0)>=10 and isinstance(rate,(int,float))
         self.rule('http_5xx',rate>=.2 if valid else None,samples=2)

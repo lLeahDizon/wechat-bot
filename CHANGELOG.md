@@ -4,6 +4,7 @@ User-facing bot changes are recorded here in reverse chronological order. Dates 
 
 ## 2026-11-20
 
+- Require two consecutive 1 GiB storage samples for a warning; 2 GiB critical alerts and the independent storage protection remain immediate.
 - Added passive, aggregated risk queries for listener exposure, UFW, SSH authentication events, declared service versions and task backup metadata, with explicit evidence limitations.
 - Kept firewall diagnostics available in the protected query service through a configuration-only fallback, explicitly leaving live kernel state unverified.
 - Added bounded historical host metric queries and explicit time ranges for request/event/SSH evidence; raw logs and infrastructure identities stay private.

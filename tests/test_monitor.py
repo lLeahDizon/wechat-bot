@@ -62,6 +62,27 @@ class MonitorTests(unittest.TestCase):
         self.monitor.rule('disk',True,severity=1);self.now+=60
         for _ in range(3):self.monitor.rule('disk',True,severity=2)
         self.assertEqual(self.phases(),['open','upgrade'])
+    def test_storage_single_spike_does_not_alert_but_two_consecutive_samples_do(self):
+        def sample(size):
+            self.monitor.observe({'resources':{'bot_data_gib':size}});self.now+=60
+        sample(1.03);sample(.47);sample(1.03)
+        self.assertEqual(self.phases(),[])
+        sample(1.03);self.assertEqual(self.phases(),['open'])
+        sample(1.03);self.assertEqual(self.phases(),['open'])
+    def test_missing_storage_sample_resets_pending_warning(self):
+        self.monitor.observe({'resources':{'bot_data_gib':1.1}});self.now+=60
+        self.monitor.observe({'resources':{}});self.now+=60
+        self.monitor.observe({'resources':{'bot_data_gib':1.1}})
+        self.assertEqual(self.phases(),[])
+    def test_critical_storage_alert_is_immediate_and_upgrade_is_not_delayed(self):
+        self.monitor.observe({'resources':{'bot_data_gib':2}})
+        self.assertEqual(self.phases(),['open'])
+        self.assertEqual(self.store.db.execute("SELECT severity FROM incidents WHERE code='bot_data'").fetchone()[0],2)
+    def test_existing_storage_warning_upgrades_immediately_at_two_gib(self):
+        self.monitor.observe({'resources':{'bot_data_gib':1.1}});self.now+=60
+        self.monitor.observe({'resources':{'bot_data_gib':1.1}});self.now+=60
+        self.monitor.observe({'resources':{'bot_data_gib':2}})
+        self.assertEqual(self.phases(),['open','upgrade'])
     def test_gateway_rate_requires_full_window_and_ten_samples(self):
         sample={'traffic':{'gateway':{'coverage_complete':False,'observed_completed_requests':100,'http_5xx_rate':1}}}
         for _ in range(3):self.monitor.observe(sample);self.now+=60
