@@ -19,6 +19,14 @@ The Native WeChat adapter under `vendor/astrbot_plugin_wechat_native` is vendore
 
 This private GitHub repository is the durable source copy. Server-side code fixes must be brought back here, verified, committed, and pushed; planned changes should be developed from this repository. See `AGENTS.md`. Record user-facing changes in `CHANGELOG.md`.
 
+## Storage warning stability
+
+The monitor emits the 1 GiB bot-data warning only after two consecutive valid
+samples at or above the threshold. A normal or unavailable sample interrupts a
+pending warning; a 2 GiB sample immediately opens or upgrades a critical alert.
+Two valid below-threshold samples are still needed for recovery. The independent
+maintenance collector retains its immediate 2 GiB and low-disk stop protection.
+
 ## Passive risk diagnostics
 
 True mentions may request passive host/Sub2API risk checks. Fixed readers expose anonymous
