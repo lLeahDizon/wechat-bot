@@ -53,16 +53,45 @@ def exposure():
 
 
 def firewall():
-    raw = bounded(['ufw','status','verbose'])
+    try:
+        raw = bounded(['ufw','status','verbose'])
+    except OSError:
+        return firewall_config()
     active = bool(re.search(r'^Status: active\s*$',raw,re.M))
     inactive = bool(re.search(r'^Status: inactive\s*$',raw,re.M))
     if not (active or inactive):
         raise OSError('firewall_status_unavailable')
     default = re.search(r'^Default: (deny|reject|allow) \(incoming\)',raw,re.M)
-    return {'ufw_active':active,'default_incoming':default.group(1) if default else 'unknown',
+    return {'ufw_active':active,'live_state_verified':True,
+            'default_incoming':default.group(1) if default else 'unknown',
             'allow_rule_count':len(re.findall(r'\bALLOW(?: IN)?\b',raw)),
             'deny_rule_count':len(re.findall(r'\b(?:DENY|REJECT)(?: IN)?\b',raw)),
             'scope':'ufw_only_cloud_security_groups_not_observed'}
+
+
+def firewall_config(etc=Path('/etc')):
+    def read(path):
+        with path.open('rb') as stream:raw=stream.read(MAX_BYTES+1)
+        if len(raw)>MAX_BYTES:raise OSError('reader_limit')
+        return raw.decode('utf-8',errors='replace')
+    config=read(etc/'ufw/ufw.conf');defaults=read(etc/'default/ufw')
+    enabled=re.search(r'^\s*ENABLED\s*=\s*(yes|no)\s*$',config,re.M|re.I)
+    if enabled is None:raise OSError('firewall_config_unknown')
+    policy=re.search(r'^\s*DEFAULT_INPUT_POLICY\s*=\s*[\"\x27]?(DROP|REJECT|ACCEPT)[\"\x27]?\s*$',defaults,re.M)
+    counts={'allow_rule_count':0,'deny_rule_count':0};observed=0
+    for name in ['user.rules','user6.rules']:
+        try:rules=read(etc/'ufw'/name)
+        except FileNotFoundError:continue
+        observed+=1
+        for row in rules.splitlines():
+            if not row.startswith('-A ufw-user-input '):continue
+            counts['allow_rule_count']+=bool(re.search(r'\s-j ACCEPT(?:\s|$)',row))
+            counts['deny_rule_count']+=bool(re.search(r'\s-j (?:DROP|REJECT)(?:\s|$)',row))
+    return {'ufw_active':None,'live_state_verified':False,
+            'configured_enabled':enabled[1].lower()=='yes',
+            'default_incoming':{'DROP':'deny','REJECT':'reject','ACCEPT':'allow'}.get(policy[1] if policy else '', 'unknown'),
+            **counts,'observed_config_rule_files':observed,'state':'partial',
+            'scope':'configured_rules_only_not_live_kernel_or_cloud_security_groups'}
 
 
 def ssh_events(start, end):
@@ -113,7 +142,7 @@ def versions():
 def backups(root):
     # File metadata only; do not open archives or inspect native user profiles.
     items=[];scanned=0
-    for directory in [Path(root)/'backups',Path(root)/'diagnostics']:
+    for directory in [Path(root)/'archives/backups',Path(root)/'backups',Path(root)/'diagnostics']:
         if directory.is_symlink() or not directory.is_dir():
             continue
         for path in directory.iterdir():

@@ -42,6 +42,20 @@ class SecurityTests(unittest.TestCase):
         self.assertTrue(public_result(evidence('ssh',value)))
         self.assertEqual(value['coverage'],'journal_retention_not_verified')
 
+    def test_firewall_readonly_fallback_never_claims_kernel_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            etc=Path(folder);(etc/'ufw').mkdir();(etc/'default').mkdir()
+            (etc/'ufw/ufw.conf').write_text('ENABLED=yes\n')
+            (etc/'default/ufw').write_text('DEFAULT_INPUT_POLICY="DROP"\n')
+            (etc/'ufw/user.rules').write_text('-A ufw-user-input -s 203.0.113.7 -j ACCEPT\n')
+            value=security.firewall_config(etc)
+            with (patch.object(security,'bounded',side_effect=OSError('readonly')),
+                  patch.object(security,'firewall_config',return_value=value)):
+                self.assertEqual(security.firewall(),value)
+            self.assertIsNone(value['ufw_active']);self.assertFalse(value['live_state_verified'])
+            self.assertTrue(value['configured_enabled']);self.assertEqual(value['default_incoming'],'deny')
+            self.assertNotIn('203.0.113.7',json.dumps(value));self.assertTrue(public_result(evidence('firewall',value)))
+
     def test_versions_do_not_expose_registry_or_private_labels(self):
         with patch.object(security,'bounded',side_effect=['"private.registry/user:1.2.3"']+['"private/account:secret"']*4):
             value=security.versions()
@@ -50,8 +64,9 @@ class SecurityTests(unittest.TestCase):
 
     def test_backup_metadata_excludes_names_contents_and_symlinks(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder);(root/'backups').mkdir();(root/'backups'/'private-name.tar.gz').write_text('secret')
-            (root/'backups'/'linked.tar.gz').symlink_to('/etc/passwd')
+            root=Path(folder);directory=root/'archives/backups';directory.mkdir(parents=True)
+            (directory/'private-name.tar.gz').write_text('secret')
+            (directory/'linked.tar.gz').symlink_to('/etc/passwd')
             value=security.backups(root)
             self.assertEqual(value['archive_count'],1);self.assertFalse(value['restore_test_verified'])
             self.assertNotIn('private-name',json.dumps(value));self.assertNotIn('secret',json.dumps(value))
