@@ -54,9 +54,9 @@ charged upstream, and its final usage is unavailable to this worker.
 Implementation checkpoint `botReadonlyRisk20261120`: source delivery target is `main`
 in the original `work/wechat-bot` checkout; isolated work is
 `feature/botReadonlyRiskSession1_20261120`, based on `720971a`.
-Checklist: (1) baseline/isolation complete; (2) fixed readers and limits complete;
-(3) model/controller and compatibility verification complete; (4) verification and
-review complete, source push pending; (5) deployment and runtime acceptance pending.
+Checklist: 5/5 implementation/runtime checks complete: (1) baseline/isolation;
+(2) fixed readers and limits; (3) model/controller and compatibility verification;
+(4) verification, review and source push; (5) deployment and runtime verification.
 Current repository suite: 402 passed. The server's older suite ran 340 tests after
 the patch versus 329 from the backup, with the same five pre-existing failures in
 legacy ranking/unit expectations and no added failures. This comparison does not
@@ -65,6 +65,16 @@ task diff's sensitive-information scan passed; browser E2E is not applicable.
 Source commit/push authorization: `automatic_source_policy`, with `main` as the
 explicit user-selected delivery target. Deployment verification and true-mention
 acceptance are separate from source delivery.
+Working commits `155439a` and `ded4da8` were merged back into `main` as `5d51de5`
+and `4e05e1a` and pushed. The original main checkout stayed clean at each merge.
+Runtime verification passed for all six new readers, the isolated no-key worker
+smoke test and the actual high-effort request payload. Native stayed online;
+the cursor did not regress and uncertain receipts, bindings, private configuration,
+and protected service start times were preserved. The query service was restarted
+twice (including the verified UFW fallback correction), AstrBot once, Native never.
+The operator receipt is `admin-evidence/readonly-risk-20261120.json` on the server;
+it and rollback archives are excluded from Git. True-mention group acceptance and
+the effective effort on a new real upstream request are pending user testing.
 Preserve Native login/cursor/history/bindings and uncertain-send state when loading changes.
 
 ## Investment failure diagnostics
